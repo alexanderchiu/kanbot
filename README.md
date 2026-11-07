@@ -29,6 +29,7 @@ Each time the server starts, it copies the database to `backups/` beside it, unl
 
 - Drag cards to move or reorder them. The board picks up agent changes within 3 seconds.
 - Cards show the date a ticket was created, or completed once it's done. Open a card to see the exact times.
+- Links in descriptions and notes are clickable.
 - Click a card to edit, cancel or delete it. Cancelled tickets stay on record and are hidden until you tick **Show cancelled**. To reopen one, change its status.
 - Use **+ Add** on a column to create a ticket.
 - Use the search box to find tickets by number, text, project, assignee or creator.

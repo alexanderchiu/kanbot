@@ -115,10 +115,7 @@
   .empty { margin: 8px 6px; color: var(--muted); }
   .card {
     flex: none;
-    display: block;
-    width: 100%;
     padding: 10px 12px;
-    text-align: left;
     background: var(--card);
     border: 1px solid transparent;
     border-radius: 8px;
@@ -128,7 +125,20 @@
   .card:hover { border-color: var(--border); }
   .card.dragging { opacity: 0.45; }
   .drop-line { flex: none; height: 3px; margin: -2px 0; border-radius: 2px; background: var(--blue); }
-  .title { display: block; font-weight: 550; overflow-wrap: anywhere; }
+  .title {
+    display: block;
+    width: 100%;
+    padding: 0;
+    background: none;
+    border: 0;
+    text-align: left;
+    font-weight: 550;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+  a { color: var(--blue); overflow-wrap: anywhere; }
+  #description-links { display: grid; gap: 2px; font-size: 13px; }
+  #description-links:empty { display: none; }
   .snippet {
     display: -webkit-box;
     margin-top: 2px;
@@ -228,6 +238,7 @@
     <label class="wide">Description
       <textarea name="description"></textarea>
     </label>
+    <div id="description-links" class="wide"></div>
     <label>Status
       <select name="status"></select>
     </label>
@@ -300,6 +311,37 @@ function el(tag, className, text) {
   return node;
 }
 
+// Only http and https match, so ticket text can't create a javascript: link.
+const URL_PATTERN = /https?:\/\/[^\s<>"']+/g;
+
+function urlsIn(text) {
+  return [...text.matchAll(URL_PATTERN)].map((match) => match[0].replace(/[.,;:!?)\]}]+$/, ""));
+}
+
+function linkNode(url) {
+  const link = el("a", "", url);
+  link.href = url;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.draggable = false;
+  return link;
+}
+
+function appendLinked(parent, text) {
+  let rest = text;
+  for (const url of urlsIn(text)) {
+    const start = rest.indexOf(url);
+    parent.append(rest.slice(0, start), linkNode(url));
+    rest = rest.slice(start + url.length);
+  }
+  parent.append(rest);
+}
+
+function renderDescriptionLinks() {
+  const urls = [...new Set(urlsIn(form.elements.description.value))];
+  $("description-links").replaceChildren(...urls.map(linkNode));
+}
+
 function projectColor(name) {
   let hash = 0;
   for (const ch of name) hash = (hash * 31 + ch.codePointAt(0)) % PROJECT_COLORS.length;
@@ -340,12 +382,18 @@ function shortDate(iso) {
 }
 
 function renderCard(ticket) {
-  const card = el("button", "card");
-  card.type = "button";
+  // A div, not a button, because buttons can't contain working links.
+  const card = el("div", "card");
   card.draggable = true;
   card.dataset.id = ticket.id;
-  card.append(el("span", "title", ticket.title));
-  if (ticket.description) card.append(el("span", "snippet", ticket.description));
+  const title = el("button", "title", ticket.title);
+  title.type = "button";
+  card.append(title);
+  if (ticket.description) {
+    const snippet = el("div", "snippet");
+    appendLinked(snippet, ticket.description);
+    card.append(snippet);
+  }
 
   const meta = el("span", "meta");
   meta.append(el("span", `pill ${ticket.priority}`, PRIORITIES.find((p) => p.value === ticket.priority).label));
@@ -366,7 +414,9 @@ function renderCard(ticket) {
   meta.append(el("span", "id", `${date} · #${ticket.id}`));
   card.append(meta);
 
-  card.addEventListener("click", () => openDialog(ticket));
+  card.addEventListener("click", (event) => {
+    if (!event.target.closest("a")) openDialog(ticket);
+  });
   card.addEventListener("dragstart", (event) => {
     draggingId = ticket.id;
     event.dataTransfer.effectAllowed = "move";
@@ -471,6 +521,7 @@ function openDialog(ticket, status = "follow_up") {
   $("dialog-title").textContent = ticket ? `Edit ticket #${ticket.id}` : "New ticket";
   form.elements.title.value = ticket?.title ?? "";
   form.elements.description.value = ticket?.description ?? "";
+  renderDescriptionLinks();
   form.elements.status.value = ticket?.status ?? status;
   form.elements.priority.value = ticket?.priority ?? "medium";
   form.elements.project.value = ticket ? ticket.project ?? "" : filter.value;
@@ -526,7 +577,9 @@ function renderHistoryEntry(entry) {
 function renderNote(note) {
   const node = el("div", "note");
   const by = note.author ? `${note.author} · ` : "";
-  node.append(el("div", "note-meta", `${by}${timestamp(note.created_at)}`), el("div", "note-body", note.body));
+  const body = el("div", "note-body");
+  appendLinked(body, note.body);
+  node.append(el("div", "note-meta", `${by}${timestamp(note.created_at)}`), body);
   return node;
 }
 
@@ -566,6 +619,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 $("close").addEventListener("click", () => dialog.close());
+form.elements.description.addEventListener("input", renderDescriptionLinks);
 
 $("add-note").addEventListener("click", async () => {
   const body = $("note-input").value.trim();
