@@ -4,44 +4,24 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kanban</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%232f5fd0'/><rect x='3' y='3' width='2.6' height='10' fill='white'/><rect x='6.7' y='3' width='2.6' height='6' fill='white'/><rect x='10.4' y='3' width='2.6' height='8' fill='white'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%23272822'/><rect x='3' y='3' width='2.6' height='10' fill='%23f92672'/><rect x='6.7' y='3' width='2.6' height='6' fill='%23e6db74'/><rect x='10.4' y='3' width='2.6' height='8' fill='%23a6e22e'/></svg>">
 <style>
   :root {
-    color-scheme: light dark;
-    --bg: #f3f4f6;
-    --column: #e7e9ee;
-    --card: #ffffff;
-    --text: #1c2027;
-    --muted: #626a78;
-    --border: #d3d7df;
-    --accent: #2f5fd0;
-    --accent-text: #ffffff;
-    --danger: #b3261e;
-    --shadow: 0 1px 2px rgb(20 25 35 / 0.14);
-    --high-bg: #fbdcd9; --high-fg: #8c1d18;
-    --medium-bg: #fbeabc; --medium-fg: #6b4e00;
-    --low-bg: #e1e5eb; --low-fg: #454c59;
-    --chip-bg-l: 90%;
-    --chip-fg-l: 26%;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #14161b;
-      --column: #1d2027;
-      --card: #2a2e37;
-      --text: #e9ebf0;
-      --muted: #a0a7b4;
-      --border: #3c414d;
-      --accent: #7ea2f5;
-      --accent-text: #10131a;
-      --danger: #f2a49e;
-      --shadow: 0 1px 2px rgb(0 0 0 / 0.5);
-      --high-bg: #5c1f1b; --high-fg: #ffd5d1;
-      --medium-bg: #4e3c0a; --medium-fg: #fbe7ae;
-      --low-bg: #3c414d; --low-fg: #d5d9e1;
-      --chip-bg-l: 24%;
-      --chip-fg-l: 85%;
-    }
+    color-scheme: dark;
+    --bg: #1e1f1c;
+    --column: #272822;
+    --card: #3e3d32;
+    --field: #1e1f1c;
+    --text: #f8f8f2;
+    --muted: #b0ab92;
+    --border: #5b5a4b;
+    --pink: #f92672;
+    --orange: #fd971f;
+    --yellow: #e6db74;
+    --green: #a6e22e;
+    --blue: #66d9ef;
+    --on-color: #1e1f1c;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.5);
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
@@ -54,7 +34,7 @@
     font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
   button, input, select, textarea { font: inherit; color: inherit; }
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
   header {
     display: flex;
@@ -63,10 +43,10 @@
     gap: 8px 16px;
     padding: 12px 16px;
   }
-  h1 { margin: 0; font-size: 18px; font-weight: 650; }
-  .filter { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--muted); }
+  h1 { margin: 0 auto 0 0; font-size: 18px; font-weight: 650; color: var(--pink); }
+  .filter { display: flex; align-items: center; gap: 8px; color: var(--muted); }
   select, input, textarea {
-    background: var(--card);
+    background: var(--field);
     border: 1px solid var(--border);
     border-radius: 6px;
     padding: 6px 8px;
@@ -76,8 +56,8 @@
     margin: 0 16px 8px;
     padding: 8px 12px;
     border-radius: 6px;
-    background: var(--high-bg);
-    color: var(--high-fg);
+    background: var(--pink);
+    color: var(--on-color);
   }
 
   main {
@@ -102,6 +82,9 @@
     padding: 10px 8px 8px 14px;
   }
   h2 { margin: 0; font-size: 14px; font-weight: 650; }
+  .column:nth-child(1) h2 { color: var(--blue); }
+  .column:nth-child(2) h2 { color: var(--orange); }
+  .column:nth-child(3) h2 { color: var(--green); }
   .count { color: var(--muted); font-variant-numeric: tabular-nums; }
   .add {
     margin-left: auto;
@@ -137,7 +120,7 @@
   }
   .card:hover { border-color: var(--border); }
   .card.dragging { opacity: 0.45; }
-  .drop-line { flex: none; height: 3px; margin: -2px 0; border-radius: 2px; background: var(--accent); }
+  .drop-line { flex: none; height: 3px; margin: -2px 0; border-radius: 2px; background: var(--blue); }
   .title { display: block; font-weight: 550; overflow-wrap: anywhere; }
   .snippet {
     display: -webkit-box;
@@ -152,32 +135,33 @@
   }
   .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; }
   .pill { padding: 1px 7px; border-radius: 999px; font-weight: 550; overflow-wrap: anywhere; }
-  .high { background: var(--high-bg); color: var(--high-fg); }
-  .medium { background: var(--medium-bg); color: var(--medium-fg); }
-  .low { background: var(--low-bg); color: var(--low-fg); }
+  .high { background: var(--pink); color: var(--on-color); }
+  .medium { background: var(--yellow); color: var(--on-color); }
+  .low { background: var(--border); color: var(--text); }
   .project {
+    padding: 0 6px;
+    border: 1px solid var(--chip);
     border-radius: 4px;
-    background: hsl(var(--hue) 60% var(--chip-bg-l));
-    color: hsl(var(--hue) 70% var(--chip-fg-l));
+    color: var(--chip);
   }
   .id { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
 
   dialog {
     width: min(560px, calc(100vw - 32px));
     padding: 20px;
-    background: var(--bg);
+    background: var(--column);
     color: var(--text);
     border: 1px solid var(--border);
     border-radius: 12px;
   }
-  dialog::backdrop { background: rgb(10 12 18 / 0.5); }
-  dialog h2 { margin-bottom: 14px; font-size: 16px; }
+  dialog::backdrop { background: rgb(0 0 0 / 0.6); }
+  dialog h2 { margin-bottom: 14px; font-size: 16px; color: var(--text); }
   form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
   label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; min-width: 0; }
   label input, label select, label textarea { width: 100%; color: var(--text); font-size: 14px; }
   .wide { grid-column: 1 / -1; }
   textarea { min-height: 140px; resize: vertical; }
-  #error { color: var(--danger); }
+  #error { color: var(--pink); }
   #stamps { color: var(--muted); font-size: 12px; }
   .actions { display: flex; justify-content: flex-end; gap: 8px; }
   .actions button {
@@ -187,8 +171,8 @@
     background: var(--card);
     cursor: pointer;
   }
-  .actions .primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
-  .actions .delete { margin-right: auto; color: var(--danger); }
+  .actions .primary { background: var(--green); border-color: var(--green); color: var(--on-color); font-weight: 600; }
+  .actions .delete { margin-right: auto; color: var(--pink); }
 
   @media (max-width: 800px) {
     html, body { height: auto; }
@@ -248,6 +232,7 @@ const PRIORITIES = [
   { value: "medium", label: "Medium" },
   { value: "low", label: "Low" },
 ];
+const PROJECT_COLORS = ["var(--green)", "var(--blue)", "var(--yellow)", "var(--orange)"];
 const POLL_MS = 3000;
 
 const $ = (id) => document.getElementById(id);
@@ -267,10 +252,10 @@ function el(tag, className, text) {
   return node;
 }
 
-function hue(name) {
+function projectColor(name) {
   let hash = 0;
-  for (const ch of name) hash = (hash * 31 + ch.codePointAt(0)) % 360;
-  return hash;
+  for (const ch of name) hash = (hash * 31 + ch.codePointAt(0)) % PROJECT_COLORS.length;
+  return PROJECT_COLORS[hash];
 }
 
 async function api(method, path, body) {
@@ -314,7 +299,7 @@ function renderCard(ticket) {
   meta.append(el("span", `pill ${ticket.priority}`, PRIORITIES.find((p) => p.value === ticket.priority).label));
   if (ticket.project) {
     const chip = el("span", "pill project", ticket.project);
-    chip.style.setProperty("--hue", hue(ticket.project));
+    chip.style.setProperty("--chip", projectColor(ticket.project));
     meta.append(chip);
   }
   meta.append(el("span", "id", `#${ticket.id}`));
