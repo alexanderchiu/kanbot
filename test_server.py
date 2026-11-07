@@ -168,6 +168,11 @@ class ApiTest(unittest.TestCase):
         status, _ = self.call("PATCH", path, {"completed_at": "2020-01-01T00:00:00Z"})
         self.assertEqual(status, 400)
 
+    def test_blocked_status(self):
+        ticket = self.create(title="stuck", status="blocked")
+        self.assertEqual(self.titles("blocked"), ["stuck"])
+        self.assertIsNone(ticket["completed_at"])
+
     def test_delete(self):
         ticket = self.create()
         path = f"/api/tickets/{ticket['id']}"
@@ -384,6 +389,8 @@ class MigrationTest(unittest.TestCase):
                 self.assertEqual(call("POST", base, {"title": "new"})["id"], 3)
                 cancelled = call("PATCH", f"{base}/1", {"status": "cancelled"})
                 self.assertEqual(cancelled["status"], "cancelled")
+                blocked = call("PATCH", f"{base}/1", {"status": "blocked"})
+                self.assertEqual(blocked["status"], "blocked")
             finally:
                 server.shutdown()
                 server.server_close()

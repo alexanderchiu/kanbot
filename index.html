@@ -66,11 +66,11 @@
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
     gap: 12px;
     padding: 0 16px 16px;
   }
-  main.with-cancelled { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .column {
     display: flex;
     flex-direction: column;
@@ -85,11 +85,12 @@
     padding: 10px 8px 8px 14px;
   }
   h2 { margin: 0; font-size: 14px; font-weight: 650; }
-  .column:nth-child(1) h2 { color: var(--blue); }
-  .column:nth-child(2) h2 { color: var(--orange); }
-  .column:nth-child(3) h2 { color: var(--green); }
-  .column:nth-child(4) h2 { color: var(--muted); }
-  .column:nth-child(4) .title { color: var(--muted); text-decoration: line-through; }
+  [data-status="follow_up"] h2 { color: var(--blue); }
+  [data-status="in_progress"] h2 { color: var(--orange); }
+  [data-status="blocked"] h2 { color: var(--pink); }
+  [data-status="done"] h2 { color: var(--green); }
+  [data-status="cancelled"] h2 { color: var(--muted); }
+  [data-status="cancelled"] .title { color: var(--muted); text-decoration: line-through; }
   .count { color: var(--muted); font-variant-numeric: tabular-nums; }
   .add {
     margin-left: auto;
@@ -184,7 +185,7 @@
 
   @media (max-width: 800px) {
     html, body { height: auto; }
-    main, main.with-cancelled { grid-template-columns: minmax(0, 1fr); }
+    main { grid-auto-flow: row; }
     .cards { overflow-y: visible; }
     form { grid-template-columns: minmax(0, 1fr); }
   }
@@ -237,6 +238,7 @@
 const COLUMNS = [
   { status: "follow_up", label: "Follow-up" },
   { status: "in_progress", label: "In progress" },
+  { status: "blocked", label: "Blocked" },
   { status: "done", label: "Done" },
 ];
 const CANCELLED = { status: "cancelled", label: "Cancelled" };
@@ -343,6 +345,7 @@ function renderCard(ticket) {
 
 function renderColumn({ status, label }, visible) {
   const column = el("section", "column");
+  column.dataset.status = status;
   const head = el("div", "column-head");
   head.append(el("h2", "", label), el("span", "count", visible.length));
   if (status !== CANCELLED.status) {
@@ -380,7 +383,6 @@ function render() {
   const cancelled = visible.filter((t) => t.status === CANCELLED.status);
   $("cancelled-count").textContent = `(${cancelled.length})`;
   const columns = showCancelled.checked ? [...COLUMNS, CANCELLED] : COLUMNS;
-  board.classList.toggle("with-cancelled", showCancelled.checked);
   board.replaceChildren(
     ...columns.map((column) =>
       renderColumn(column, visible.filter((t) => t.status === column.status))

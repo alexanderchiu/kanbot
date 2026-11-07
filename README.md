@@ -39,7 +39,7 @@ Each time the server starts, it copies the database to `backups/` beside it, unl
 |---|---|---|
 | `title` | Non-empty string (required on create) | |
 | `description` | String | `""` |
-| `status` | `follow_up`, `in_progress`, `done`, `cancelled` | `follow_up` |
+| `status` | `follow_up`, `in_progress`, `blocked`, `done`, `cancelled` | `follow_up` |
 | `priority` | `high`, `medium`, `low` | `medium` |
 | `project` | String or `null`, stored lowercase | `null` |
 | `idea` | `true` or `false`; tags the ticket as an idea | `false` |
@@ -90,6 +90,8 @@ existing tag.
 - Finishing work:
   `curl -s -X PATCH http://127.0.0.1:8787/api/tickets/42 -d '{"status": "done"}'`
 
+- Marking work as stuck:
+  `curl -s -X PATCH http://127.0.0.1:8787/api/tickets/42 -d '{"status": "blocked"}'`
 - Dropping work that's no longer needed, which keeps the ticket on record:
   `curl -s -X PATCH http://127.0.0.1:8787/api/tickets/42 -d '{"status": "cancelled"}'`
 

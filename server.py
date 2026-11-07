@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 HERE = Path(__file__).resolve().parent
-STATUSES = ("follow_up", "in_progress", "done", "cancelled")
+STATUSES = ("follow_up", "in_progress", "blocked", "done", "cancelled")
 PRIORITIES = ("high", "medium", "low")
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
 MAX_BODY = 1024 * 1024
@@ -23,7 +23,7 @@ CREATE TABLE {name} (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     title       TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
-    status      TEXT NOT NULL CHECK (status IN ('follow_up', 'in_progress', 'done', 'cancelled')),
+    status      TEXT NOT NULL CHECK (status IN ('follow_up', 'in_progress', 'blocked', 'done', 'cancelled')),
     priority    TEXT NOT NULL CHECK (priority IN ('high', 'medium', 'low')),
     project     TEXT,
     idea        INTEGER NOT NULL DEFAULT 0,
@@ -41,7 +41,7 @@ API_DOCS = {
     "ticket_fields": {
         "title": "string, required on create",
         "description": "string, default ''",
-        "status": "follow_up | in_progress | done | cancelled, default follow_up",
+        "status": "follow_up | in_progress | blocked | done | cancelled, default follow_up",
         "priority": "high | medium | low, default medium",
         "project": "string or null; project tag, stored lowercase",
         "idea": "boolean, default false; tags the ticket as an idea",
@@ -116,7 +116,7 @@ def migrate(db_path):
         if row is None:
             conn.execute(TICKETS_TABLE.format(name="tickets"))
             return
-        if "completed_at" in row["sql"]:
+        if "blocked" in row["sql"]:
             return
 
         columns = ", ".join(r["name"] for r in conn.execute("PRAGMA table_info(tickets)"))
