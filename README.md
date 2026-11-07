@@ -50,6 +50,7 @@ Each time the server starts, it copies the database to `backups/` beside it, unl
 Tickets also return these read-only fields:
 
 - `id`
+- `note_count`
 - `created_at`: when the ticket was created, in UTC.
 - `updated_at`: when the ticket last changed, in UTC.
 - `completed_at`: when the ticket moved to `done`, in UTC. It's cleared if the ticket leaves `done`, and is `null` for every other status.
@@ -63,8 +64,9 @@ If you don't set `position`, a ticket goes after the last ticket of equal or hig
 | `GET /api` | API description, in JSON |
 | `GET /api/tickets` | List tickets in board order; filter with `status`, `project`, `priority`, `idea`, `assignee`, `created_by`, `q` |
 | `POST /api/tickets` | Create a ticket |
-| `GET /api/tickets/{id}` | Get a ticket |
+| `GET /api/tickets/{id}` | Get a ticket, including its notes |
 | `PATCH /api/tickets/{id}` | Change or move a ticket |
+| `POST /api/tickets/{id}/notes` | Add a note with `{"body": "text", "author": "name"}` |
 | `POST /api/tickets/{id}/claim` | Take a ticket with `{"assignee": "name"}`; returns 409 if someone else holds it |
 | `DELETE /api/tickets/{id}` | Delete a ticket permanently |
 | `GET /api/projects` | List project tags with ticket counts |
@@ -95,6 +97,8 @@ existing tag.
 - Finishing work:
   `curl -s -X PATCH http://127.0.0.1:8787/api/tickets/42 -d '{"status": "done"}'`
 
+- Recording progress, a handoff, or why work is blocked or cancelled:
+  `curl -s http://127.0.0.1:8787/api/tickets/42/notes -d '{"body": "Waiting on the API key.", "author": "claude-code"}'`
 - Marking work as stuck:
   `curl -s -X PATCH http://127.0.0.1:8787/api/tickets/42 -d '{"status": "blocked"}'`
 - Dropping work that's no longer needed, which keeps the ticket on record:

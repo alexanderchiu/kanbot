@@ -18,6 +18,7 @@ MAX_BODY = 1024 * 1024
 BACKUPS_KEPT = 30
 TICKET_PATH = re.compile(r"^/api/tickets/(\d{1,18})$")
 CLAIM_PATH = re.compile(r"^/api/tickets/(\d{1,18})/claim$")
+NOTES_PATH = re.compile(r"^/api/tickets/(\d{1,18})/notes$")
 
 TICKETS_TABLE = """
 CREATE TABLE {name} (
@@ -36,6 +37,22 @@ CREATE TABLE {name} (
     completed_at TEXT
 );
 """
+
+NOTES_TABLE = """
+CREATE TABLE IF NOT EXISTS notes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id  INTEGER NOT NULL,
+    author     TEXT,
+    body       TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+"""
+
+SELECT_TICKET = (
+    "SELECT tickets.*,"
+    " (SELECT COUNT(*) FROM notes WHERE notes.ticket_id = tickets.id) AS note_count"
+    " FROM tickets"
+)
 
 API_DOCS = {
     "description": "Local kanban board. Request and response bodies are JSON.",
@@ -56,6 +73,7 @@ API_DOCS = {
     },
     "read_only_fields": {
         "id": "integer",
+        "note_count": "integer",
         "created_at": "UTC timestamp",
         "updated_at": "UTC timestamp",
         "completed_at": "UTC timestamp set when the ticket moves to done, "
@@ -66,7 +84,10 @@ API_DOCS = {
         "status, project, priority, idea (true or false), assignee, created_by, q "
         "(text search of title and description).",
         "POST /api/tickets": "Create a ticket. Returns it with status 201.",
-        "GET /api/tickets/{id}": "Fetch one ticket.",
+        "GET /api/tickets/{id}": "Fetch one ticket, including its notes.",
+        "POST /api/tickets/{id}/notes": 'Add a note with {"body": "text", "author": '
+        '"name"}. Notes are append-only, so use them for progress, handoffs and the '
+        "reason a ticket is blocked or cancelled.",
         "PATCH /api/tickets/{id}": "Change any ticket fields. To move a ticket, send "
         '{"status": "done"}. To cancel one and keep it on record, send '
         '{"status": "cancelled"}.',
@@ -121,6 +142,8 @@ def migrate(db_path):
     the closest record available.
     """
     with transaction(db_path) as conn:
+        conn.execute(NOTES_TABLE)
+        conn.execute("CREATE INDEX IF NOT EXISTS notes_ticket ON notes (ticket_id)")
         row = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'tickets'").fetchone()
         if row is None:
             conn.execute(TICKETS_TABLE.format(name="tickets"))
@@ -249,7 +272,7 @@ def ticket_json(row):
 
 
 def fetch_ticket(conn, ticket_id):
-    row = conn.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
+    row = conn.execute(f"{SELECT_TICKET} WHERE id = ?", (ticket_id,)).fetchone()
     if row is None:
         raise ApiError(404, f"Ticket {ticket_id} not found.")
     return ticket_json(row)
@@ -326,9 +349,32 @@ def claim_ticket(db_path, ticket_id, body):
         return fetch_ticket(conn, ticket_id)
 
 
+def add_note(db_path, ticket_id, body):
+    if not isinstance(body, dict):
+        raise ApiError(400, "Request body must be a JSON object.")
+    unknown = set(body) - {"body", "author"}
+    if unknown:
+        raise ApiError(400, f"Unknown fields: {', '.join(sorted(unknown))}.")
+    text, author = body.get("body"), body.get("author")
+    if not isinstance(text, str) or not text.strip():
+        raise ApiError(400, "body must be a non-empty string.")
+    if author is not None and not isinstance(author, str):
+        raise ApiError(400, "author must be a string or null.")
+    stamp = now()
+    with transaction(db_path) as conn:
+        fetch_ticket(conn, ticket_id)
+        note_id = conn.execute(
+            "INSERT INTO notes (ticket_id, author, body, created_at) VALUES (?, ?, ?, ?)",
+            (ticket_id, normalize_name(author) if author else None, text.strip(), stamp),
+        ).lastrowid
+        conn.execute("UPDATE tickets SET updated_at = ? WHERE id = ?", (stamp, ticket_id))
+        return dict(conn.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone())
+
+
 def delete_ticket(db_path, ticket_id):
     with transaction(db_path) as conn:
         fetch_ticket(conn, ticket_id)
+        conn.execute("DELETE FROM notes WHERE ticket_id = ?", (ticket_id,))
         conn.execute("DELETE FROM tickets WHERE id = ?", (ticket_id,))
     return {"deleted": ticket_id}
 
@@ -360,7 +406,7 @@ def list_tickets(db_path, query):
         where.append(r"(title LIKE ? ESCAPE '\' OR description LIKE ? ESCAPE '\')")
         args += [f"%{escaped}%"] * 2
 
-    sql = "SELECT * FROM tickets"
+    sql = SELECT_TICKET
     if where:
         sql += " WHERE " + " AND ".join(where)
     conn = connect(db_path)
@@ -375,7 +421,11 @@ def list_tickets(db_path, query):
 def get_ticket(db_path, ticket_id):
     conn = connect(db_path)
     try:
-        return fetch_ticket(conn, ticket_id)
+        ticket = fetch_ticket(conn, ticket_id)
+        notes = conn.execute(
+            "SELECT * FROM notes WHERE ticket_id = ? ORDER BY id", (ticket_id,)
+        ).fetchall()
+        return {**ticket, "notes": [dict(row) for row in notes]}
     finally:
         conn.close()
 
@@ -445,6 +495,7 @@ class Handler(BaseHTTPRequestHandler):
         method = self.command
         match = TICKET_PATH.match(path)
         claim = CLAIM_PATH.match(path)
+        notes = NOTES_PATH.match(path)
 
         if method == "GET" and path == "/":
             html = (HERE / "index.html").read_bytes()
@@ -466,6 +517,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(200, delete_ticket(db, ticket_id))
         if claim and method == "POST":
             return self.send_json(200, claim_ticket(db, int(claim[1]), self.read_body()))
+        if notes and method == "POST":
+            return self.send_json(201, add_note(db, int(notes[1]), self.read_body()))
         if method == "GET" and path == "/api/projects":
             return self.send_json(200, list_projects(db))
         raise ApiError(404, f"No route for {method} {path}. See GET /api for the API docs.")

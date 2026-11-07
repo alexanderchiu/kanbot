@@ -213,6 +213,34 @@ class ApiTest(unittest.TestCase):
             )
         self.assertEqual(sorted(statuses), [200] + [409] * 7)
 
+    def test_notes(self):
+        ticket = self.create()
+        self.assertEqual(ticket["note_count"], 0)
+        path = f"/api/tickets/{ticket['id']}"
+        status, note = self.call("POST", f"{path}/notes", {"body": " First ", "author": "Agent"})
+        self.assertEqual(status, 201)
+        self.assertEqual((note["body"], note["author"]), ("First", "agent"))
+        self.call("POST", f"{path}/notes", {"body": "Second"})
+
+        _, detail = self.call("GET", path)
+        self.assertEqual([n["body"] for n in detail["notes"]], ["First", "Second"])
+        self.assertIsNone(detail["notes"][1]["author"])
+        self.assertEqual(detail["note_count"], 2)
+        _, [listed] = self.call("GET", "/api/tickets")
+        self.assertEqual(listed["note_count"], 2)
+        self.assertNotIn("notes", listed)
+
+        for body in ({}, {"body": "  "}, {"body": 1}, {"body": "x", "author": 2}, {"body": "x", "by": "y"}, []):
+            self.assertEqual(self.call("POST", f"{path}/notes", body)[0], 400)
+        self.assertEqual(self.call("POST", "/api/tickets/999/notes", {"body": "x"})[0], 404)
+
+        self.call("DELETE", path)
+        next_ticket = self.create()
+        self.assertEqual(self.call("GET", f"/api/tickets/{next_ticket['id']}")[1]["notes"], [])
+        conn = sqlite3.connect(self.db)
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM notes").fetchone(), (0,))
+        conn.close()
+
     def test_delete(self):
         ticket = self.create()
         path = f"/api/tickets/{ticket['id']}"
@@ -423,7 +451,7 @@ class MigrationTest(unittest.TestCase):
                     {
                         "id": 1, "title": "first", "description": "", "status": "in_progress",
                         "priority": "high", "project": "web", "idea": True, "position": 4,
-                        "created_by": None, "assignee": None,
+                        "created_by": None, "assignee": None, "note_count": 0,
                         "created_at": "then", "updated_at": "later", "completed_at": None,
                     },
                 )

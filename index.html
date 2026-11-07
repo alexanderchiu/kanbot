@@ -152,6 +152,7 @@
     color: var(--chip);
   }
   .assignee { color: var(--text); overflow-wrap: anywhere; }
+  .note-count { color: var(--muted); }
   .id { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
 
   dialog {
@@ -171,6 +172,14 @@
   label.check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
   label.check input { width: 16px; }
   textarea { min-height: 140px; resize: vertical; }
+  #activity { display: grid; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+  h3 { margin: 0; font-size: 14px; font-weight: 650; }
+  #notes { display: grid; gap: 8px; }
+  #notes:empty::before { content: "No notes yet"; color: var(--muted); }
+  .note { padding: 8px 10px; background: var(--card); border-radius: 6px; }
+  .note-meta { color: var(--muted); font-size: 12px; }
+  .note-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+  #note-input { min-height: 64px; }
   #error { color: var(--pink); }
   #stamps { color: var(--muted); font-size: 12px; }
   .actions { display: flex; justify-content: flex-end; gap: 8px; }
@@ -236,6 +245,16 @@
       <button type="submit" class="primary">Save</button>
     </div>
   </form>
+  <section id="activity" hidden>
+    <h3>Notes</h3>
+    <div id="notes"></div>
+    <label>Add a note
+      <textarea id="note-input"></textarea>
+    </label>
+    <div class="actions">
+      <button type="button" id="add-note">Add note</button>
+    </div>
+  </section>
 </dialog>
 
 <script>
@@ -330,6 +349,10 @@ function renderCard(ticket) {
     ? `Completed ${shortDate(ticket.completed_at)}`
     : `Created ${shortDate(ticket.created_at)}`;
   if (ticket.assignee) meta.append(el("span", "assignee", `@${ticket.assignee}`));
+  if (ticket.note_count) {
+    const noun = ticket.note_count === 1 ? "note" : "notes";
+    meta.append(el("span", "note-count", `${ticket.note_count} ${noun}`));
+  }
   meta.append(el("span", "id", `${date} · #${ticket.id}`));
   card.append(meta);
 
@@ -439,13 +462,36 @@ function openDialog(ticket, status = "follow_up") {
   $("error").hidden = true;
   $("stamps").hidden = !ticket;
   if (ticket) {
-    const when = (iso) => new Date(iso).toLocaleString();
+    const when = timestamp;
     const completed = ticket.completed_at ? ` · Completed ${when(ticket.completed_at)}` : "";
     const creator = ticket.created_by ? ` by ${ticket.created_by}` : "";
     $("stamps").textContent = `Created ${when(ticket.created_at)}${creator}${completed} · Updated ${when(ticket.updated_at)}`;
   }
+  $("activity").hidden = !ticket;
+  $("notes").replaceChildren();
+  $("note-input").value = "";
+  if (ticket) loadActivity(ticket.id);
   dialog.showModal();
   form.elements.title.focus();
+}
+
+const timestamp = (iso) => new Date(iso).toLocaleString();
+
+async function loadActivity(id) {
+  try {
+    const detail = await api("GET", `/api/tickets/${id}`);
+    if (editing?.id !== id) return;
+    $("notes").replaceChildren(...detail.notes.map(renderNote));
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+function renderNote(note) {
+  const node = el("div", "note");
+  const by = note.author ? `${note.author} · ` : "";
+  node.append(el("div", "note-meta", `${by}${timestamp(note.created_at)}`), el("div", "note-body", note.body));
+  return node;
 }
 
 function showError(message) {
@@ -482,6 +528,19 @@ form.addEventListener("submit", async (event) => {
 });
 
 $("close").addEventListener("click", () => dialog.close());
+
+$("add-note").addEventListener("click", async () => {
+  const body = $("note-input").value.trim();
+  if (!body) return;
+  try {
+    await api("POST", `/api/tickets/${editing.id}/notes`, { body, author: "user" });
+    $("note-input").value = "";
+    await loadActivity(editing.id);
+    await refresh(true);
+  } catch (error) {
+    showError(error.message);
+  }
+});
 
 // Submitting the form keeps any edits made in the dialog before cancelling.
 $("cancel-ticket").addEventListener("click", () => {
