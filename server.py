@@ -41,12 +41,14 @@ API_DOCS = {
         "status": "follow_up | in_progress | done, default follow_up",
         "priority": "high | medium | low, default medium",
         "project": "string or null; project tag, stored lowercase",
+        "idea": "boolean, default false; tags the ticket as an idea",
         "position": "integer >= 0; index within the column. If omitted, the ticket "
         "is placed by priority.",
     },
     "endpoints": {
         "GET /api/tickets": "List tickets in board order. Optional query parameters: "
-        "status, project, priority, q (text search of title and description).",
+        "status, project, priority, idea (true or false), q (text search of title "
+        "and description).",
         "POST /api/tickets": "Create a ticket. Returns it with status 201.",
         "GET /api/tickets/{id}": "Fetch one ticket.",
         "PATCH /api/tickets/{id}": "Change any ticket fields. To move a ticket, send "
@@ -123,6 +125,10 @@ def validate(body, creating):
         if value is not None and not isinstance(value, str):
             raise ApiError(400, "project must be a string or null.")
         fields["project"] = normalize_project(value) if value else None
+    if "idea" in body:
+        if not isinstance(body["idea"], bool):
+            raise ApiError(400, "idea must be true or false.")
+        fields["idea"] = body["idea"]
     if "position" in body:
         value = body["position"]
         if type(value) is not int or value < 0:
@@ -157,11 +163,15 @@ def place(conn, ticket_id, status, priority, position=None):
     )
 
 
+def ticket_json(row):
+    return {**dict(row), "idea": bool(row["idea"])}
+
+
 def fetch_ticket(conn, ticket_id):
     row = conn.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
     if row is None:
         raise ApiError(404, f"Ticket {ticket_id} not found.")
-    return dict(row)
+    return ticket_json(row)
 
 
 def create_ticket(db_path, body):
@@ -171,14 +181,15 @@ def create_ticket(db_path, body):
     stamp = now()
     with transaction(db_path) as conn:
         ticket_id = conn.execute(
-            "INSERT INTO tickets (title, description, status, priority, project,"
-            " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO tickets (title, description, status, priority, project, idea,"
+            " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 fields["title"],
                 fields.get("description", ""),
                 status,
                 priority,
                 fields.get("project"),
+                fields.get("idea", False),
                 stamp,
                 stamp,
             ),
@@ -221,7 +232,7 @@ def delete_ticket(db_path, ticket_id):
 
 def list_tickets(db_path, query):
     params = {key: values[-1] for key, values in parse_qs(query).items()}
-    unknown = set(params) - {"status", "project", "priority", "q"}
+    unknown = set(params) - {"status", "project", "priority", "idea", "q"}
     if unknown:
         raise ApiError(400, f"Unknown query parameters: {', '.join(sorted(unknown))}.")
 
@@ -235,6 +246,11 @@ def list_tickets(db_path, query):
     if "project" in params:
         where.append("project IS ?")
         args.append(normalize_project(params["project"]))
+    if "idea" in params:
+        if params["idea"] not in ("true", "false"):
+            raise ApiError(400, "idea must be true or false.")
+        where.append("idea = ?")
+        args.append(params["idea"] == "true")
     if "q" in params:
         escaped = re.sub(r"([\\%_])", r"\\\1", params["q"])
         where.append(r"(title LIKE ? ESCAPE '\' OR description LIKE ? ESCAPE '\')")
@@ -245,7 +261,7 @@ def list_tickets(db_path, query):
         sql += " WHERE " + " AND ".join(where)
     conn = connect(db_path)
     try:
-        rows = [dict(row) for row in conn.execute(sql, args)]
+        rows = [ticket_json(row) for row in conn.execute(sql, args)]
     finally:
         conn.close()
     rows.sort(key=lambda t: (STATUSES.index(t["status"]), t["position"], t["id"]))
@@ -364,6 +380,10 @@ class Handler(BaseHTTPRequestHandler):
 def make_server(db_path, port):
     conn = connect(db_path)
     conn.executescript(SCHEMA)
+    # Databases created before the idea tag existed need the column added.
+    columns = [row["name"] for row in conn.execute("PRAGMA table_info(tickets)")]
+    if "idea" not in columns:
+        conn.execute("ALTER TABLE tickets ADD COLUMN idea INTEGER NOT NULL DEFAULT 0")
     conn.close()
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     server.db_path = str(db_path)

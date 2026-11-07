@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import tempfile
 import threading
 import unittest
@@ -106,6 +107,23 @@ class ApiTest(unittest.TestCase):
             projects, [{"name": "api", "tickets": 1}, {"name": "web", "tickets": 2}]
         )
 
+    def test_idea_tag(self):
+        plain = self.create(title="task", project="web")
+        self.assertIs(plain["idea"], False)
+        idea = self.create(title="idea", project="web", idea=True)
+        self.assertIs(idea["idea"], True)
+
+        def titles(query):
+            return [t["title"] for t in self.call("GET", f"/api/tickets?{query}")[1]]
+
+        self.assertEqual(titles("idea=true"), ["idea"])
+        self.assertEqual(titles("idea=false&project=web"), ["task"])
+        _, updated = self.call("PATCH", f"/api/tickets/{plain['id']}", {"idea": True})
+        self.assertIs(updated["idea"], True)
+        self.assertIs(self.call("GET", f"/api/tickets/{plain['id']}")[1]["idea"], True)
+        self.assertEqual(self.call("POST", "/api/tickets", {"title": "x", "idea": 1})[0], 400)
+        self.assertEqual(self.call("GET", "/api/tickets?idea=maybe")[0], 400)
+
     def test_delete(self):
         ticket = self.create()
         path = f"/api/tickets/{ticket['id']}"
@@ -156,6 +174,39 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(set(statuses), {201})
         _, tickets = self.call("GET", "/api/tickets")
         self.assertEqual([t["position"] for t in tickets], list(range(40)))
+
+
+class MigrationTest(unittest.TestCase):
+    def test_adds_idea_column_and_keeps_existing_tickets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "old.db"
+            conn = sqlite3.connect(db)
+            conn.execute(
+                "CREATE TABLE tickets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL,"
+                " description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, priority TEXT NOT NULL,"
+                " project TEXT, position INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,"
+                " updated_at TEXT NOT NULL)"
+            )
+            conn.execute(
+                "INSERT INTO tickets (title, status, priority, created_at, updated_at)"
+                " VALUES ('old', 'done', 'low', 'then', 'then')"
+            )
+            conn.commit()
+            conn.close()
+
+            # Starting twice checks that the migration is safe to repeat.
+            make_server(db, 0).server_close()
+            server = make_server(db, 0)
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            url = f"http://127.0.0.1:{server.server_port}/api/tickets"
+            try:
+                with urllib.request.urlopen(url) as response:
+                    [ticket] = json.load(response)
+            finally:
+                server.shutdown()
+                server.server_close()
+            self.assertEqual(ticket["title"], "old")
+            self.assertIs(ticket["idea"], False)
 
 
 if __name__ == "__main__":
