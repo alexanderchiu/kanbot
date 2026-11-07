@@ -124,6 +124,18 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(self.call("POST", "/api/tickets", {"title": "x", "idea": 1})[0], 400)
         self.assertEqual(self.call("GET", "/api/tickets?idea=maybe")[0], 400)
 
+    def test_cancel_and_reopen(self):
+        ticket = self.create(title="dropped", project="web")
+        self.create(title="kept", project="web")
+        path = f"/api/tickets/{ticket['id']}"
+        status, cancelled = self.call("PATCH", path, {"status": "cancelled"})
+        self.assertEqual((status, cancelled["status"]), (200, "cancelled"))
+        self.assertEqual(self.titles("cancelled"), ["dropped"])
+        self.assertEqual(self.titles("follow_up"), ["kept"])
+        self.assertEqual(self.call("GET", path)[0], 200)
+        self.assertEqual(self.call("PATCH", path, {"status": "follow_up"})[0], 200)
+        self.assertEqual(self.titles("cancelled"), [])
+
     def test_delete(self):
         ticket = self.create()
         path = f"/api/tickets/{ticket['id']}"
@@ -207,6 +219,57 @@ class MigrationTest(unittest.TestCase):
                 server.server_close()
             self.assertEqual(ticket["title"], "old")
             self.assertIs(ticket["idea"], False)
+
+
+    def test_rebuild_allows_cancelled_and_preserves_data_and_ids(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "old.db"
+            conn = sqlite3.connect(db)
+            conn.execute(
+                "CREATE TABLE tickets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL,"
+                " description TEXT NOT NULL DEFAULT '',"
+                " status TEXT NOT NULL CHECK (status IN ('follow_up', 'in_progress', 'done')),"
+                " priority TEXT NOT NULL CHECK (priority IN ('high', 'medium', 'low')),"
+                " project TEXT, position INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,"
+                " updated_at TEXT NOT NULL, idea INTEGER NOT NULL DEFAULT 0)"
+            )
+            for title, idea in (("first", 1), ("deleted", 0)):
+                conn.execute(
+                    "INSERT INTO tickets (title, status, priority, project, idea, position,"
+                    " created_at, updated_at)"
+                    " VALUES (?, 'in_progress', 'high', 'web', ?, 4, 'then', 'later')",
+                    (title, idea),
+                )
+            conn.execute("DELETE FROM tickets WHERE title = 'deleted'")
+            conn.commit()
+            conn.close()
+
+            server = make_server(db, 0)
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            base = f"http://127.0.0.1:{server.server_port}/api/tickets"
+
+            def call(method, url, body=None):
+                data = json.dumps(body).encode() if body else None
+                request = urllib.request.Request(url, data=data, method=method)
+                with urllib.request.urlopen(request) as response:
+                    return json.load(response)
+
+            try:
+                [old] = call("GET", base)
+                self.assertEqual(
+                    {k: old[k] for k in old},
+                    {
+                        "id": 1, "title": "first", "description": "", "status": "in_progress",
+                        "priority": "high", "project": "web", "idea": True, "position": 4,
+                        "created_at": "then", "updated_at": "later",
+                    },
+                )
+                self.assertEqual(call("POST", base, {"title": "new"})["id"], 3)
+                cancelled = call("PATCH", f"{base}/1", {"status": "cancelled"})
+                self.assertEqual(cancelled["status"], "cancelled")
+            finally:
+                server.shutdown()
+                server.server_close()
 
 
 if __name__ == "__main__":

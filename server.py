@@ -11,20 +11,21 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 HERE = Path(__file__).resolve().parent
-STATUSES = ("follow_up", "in_progress", "done")
+STATUSES = ("follow_up", "in_progress", "done", "cancelled")
 PRIORITIES = ("high", "medium", "low")
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
 MAX_BODY = 1024 * 1024
 TICKET_PATH = re.compile(r"^/api/tickets/(\d{1,18})$")
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS tickets (
+TICKETS_TABLE = """
+CREATE TABLE {name} (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     title       TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
-    status      TEXT NOT NULL CHECK (status IN ('follow_up', 'in_progress', 'done')),
+    status      TEXT NOT NULL CHECK (status IN ('follow_up', 'in_progress', 'done', 'cancelled')),
     priority    TEXT NOT NULL CHECK (priority IN ('high', 'medium', 'low')),
     project     TEXT,
+    idea        INTEGER NOT NULL DEFAULT 0,
     position    INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
@@ -38,7 +39,7 @@ API_DOCS = {
     "ticket_fields": {
         "title": "string, required on create",
         "description": "string, default ''",
-        "status": "follow_up | in_progress | done, default follow_up",
+        "status": "follow_up | in_progress | done | cancelled, default follow_up",
         "priority": "high | medium | low, default medium",
         "project": "string or null; project tag, stored lowercase",
         "idea": "boolean, default false; tags the ticket as an idea",
@@ -52,7 +53,8 @@ API_DOCS = {
         "POST /api/tickets": "Create a ticket. Returns it with status 201.",
         "GET /api/tickets/{id}": "Fetch one ticket.",
         "PATCH /api/tickets/{id}": "Change any ticket fields. To move a ticket, send "
-        '{"status": "done"}.',
+        '{"status": "done"}. To cancel one and keep it on record, send '
+        '{"status": "cancelled"}.',
         "DELETE /api/tickets/{id}": "Delete a ticket permanently.",
         "GET /api/projects": "List project tags in use, with ticket counts.",
     },
@@ -90,6 +92,37 @@ def transaction(db_path):
         raise
     finally:
         conn.close()
+
+
+def migrate(db_path):
+    """Create the tickets table, or bring an older one up to date.
+
+    SQLite can't change a CHECK constraint in place, so a table that predates the
+    cancelled status is rebuilt. This runs in one transaction, so a failure leaves
+    the old table untouched.
+    """
+    with transaction(db_path) as conn:
+        row = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'tickets'").fetchone()
+        if row is None:
+            conn.execute(TICKETS_TABLE.format(name="tickets"))
+            return
+        if "cancelled" in row["sql"]:
+            return
+
+        columns = ", ".join(r["name"] for r in conn.execute("PRAGMA table_info(tickets)"))
+        # Keep the ID counter, so IDs of deleted tickets are never reused.
+        counter = conn.execute(
+            "SELECT seq FROM sqlite_sequence WHERE name = 'tickets'"
+        ).fetchone()
+        conn.execute(TICKETS_TABLE.format(name="tickets_new"))
+        conn.execute(f"INSERT INTO tickets_new ({columns}) SELECT {columns} FROM tickets")
+        conn.execute("DROP TABLE tickets")
+        conn.execute("ALTER TABLE tickets_new RENAME TO tickets")
+        conn.execute("DELETE FROM sqlite_sequence WHERE name = 'tickets'")
+        if counter:
+            conn.execute(
+                "INSERT INTO sqlite_sequence (name, seq) VALUES ('tickets', ?)", (counter["seq"],)
+            )
 
 
 def normalize_project(value):
@@ -378,13 +411,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def make_server(db_path, port):
-    conn = connect(db_path)
-    conn.executescript(SCHEMA)
-    # Databases created before the idea tag existed need the column added.
-    columns = [row["name"] for row in conn.execute("PRAGMA table_info(tickets)")]
-    if "idea" not in columns:
-        conn.execute("ALTER TABLE tickets ADD COLUMN idea INTEGER NOT NULL DEFAULT 0")
-    conn.close()
+    migrate(db_path)
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     server.db_path = str(db_path)
     return server
