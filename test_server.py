@@ -100,6 +100,98 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(titles("q=100%25"), {"Fix 100% bug"})
         self.assertEqual(titles("q=%25"), {"Fix 100% bug"})
 
+    def set_times(self, ticket, created_at, completed_at, status="done"):
+        conn = sqlite3.connect(self.db)
+        with conn:
+            conn.execute(
+                "UPDATE tickets SET status = ?, created_at = ?, completed_at = ? WHERE id = ?",
+                (status, created_at, completed_at, ticket["id"]),
+            )
+        conn.close()
+
+    def test_stats_empty_board(self):
+        status, stats = self.call("GET", "/api/stats")
+        self.assertEqual(status, 200)
+        self.assertEqual(stats["total"], 0)
+        self.assertEqual(stats["open"], 0)
+        self.assertEqual(sum(stats["by_status"].values()), 0)
+        self.assertIsNone(stats["avg_completion_seconds"])
+        self.assertIsNone(stats["median_completion_seconds"])
+        for key in ("by_creator", "by_assignee", "by_project", "by_priority"):
+            self.assertEqual(stats[key], [])
+
+    def test_stats_counts_times_and_sorting(self):
+        a = self.create(created_by="ann", project="web", priority="high")
+        b = self.create(created_by="ann", project="web")
+        c = self.create(created_by="bob", project="api", assignee="bob")
+        self.create(created_by="ann", status="cancelled")
+        self.create(created_by="ann", status="in_progress")
+        self.set_times(a, "2026-01-01T00:00:00Z", "2026-01-01T01:00:00Z")
+        self.set_times(b, "2026-01-01T00:00:00Z", "2026-01-01T03:00:00Z")
+        self.set_times(c, "2026-01-01T00:00:00Z", "2026-01-01T00:10:00Z")
+        _, stats = self.call("GET", "/api/stats")
+        self.assertEqual(stats["total"], 5)
+        self.assertEqual(stats["open"], 1)
+        self.assertEqual(stats["by_status"]["done"], 3)
+        self.assertEqual(stats["by_status"]["cancelled"], 1)
+        self.assertEqual(stats["avg_completion_seconds"], round((3600 + 10800 + 600) / 3))
+        self.assertEqual(stats["median_completion_seconds"], 3600)
+        ann, bob = stats["by_creator"]
+        self.assertEqual(
+            ann,
+            {"name": "ann", "tickets": 4, "open": 1, "done": 2, "cancelled": 1,
+             "avg_completion_seconds": 7200, "median_completion_seconds": 7200},
+        )
+        self.assertEqual(bob["name"], "bob")
+        self.assertEqual(bob["median_completion_seconds"], 600)
+        self.assertEqual([r["name"] for r in stats["by_priority"]], ["medium", "high"])
+
+    def test_stats_null_names_get_their_own_row(self):
+        self.create()
+        self.create(created_by="ann", assignee="bob", project="web")
+        _, stats = self.call("GET", "/api/stats")
+        for key, name in (("by_creator", "ann"), ("by_assignee", "bob"), ("by_project", "web")):
+            self.assertEqual({r["name"] for r in stats[key]}, {None, name})
+            for row in stats[key]:
+                self.assertEqual(row["tickets"], 1)
+                self.assertIsNone(row["avg_completion_seconds"])
+
+    def test_stats_ignores_bad_and_negative_durations(self):
+        good = self.create()
+        negative = self.create()
+        garbage = self.create()
+        missing = self.create()
+        self.set_times(good, "2026-01-01T00:00:00Z", "2026-01-01T00:02:00Z")
+        self.set_times(negative, "2026-01-02T00:00:00Z", "2026-01-01T00:00:00Z")
+        self.set_times(garbage, "not a date", "2026-01-01T00:00:00Z")
+        self.set_times(missing, "2026-01-01T00:00:00Z", None)
+        status, stats = self.call("GET", "/api/stats")
+        self.assertEqual(status, 200)
+        self.assertEqual(stats["by_status"]["done"], 4)
+        self.assertEqual(stats["avg_completion_seconds"], 120)
+        self.assertEqual(stats["median_completion_seconds"], 120)
+
+    def test_stats_project_filter(self):
+        self.create(project="web", created_by="ann")
+        self.create(project="Web", created_by="bob")
+        self.create(project="api")
+        self.create()
+        _, web = self.call("GET", "/api/stats?project=WEB")
+        self.assertEqual(web["total"], 2)
+        self.assertEqual([r["name"] for r in web["by_project"]], ["web"])
+        _, none = self.call("GET", "/api/stats?project=")
+        self.assertEqual(none["total"], 1)
+        self.assertIsNone(none["by_project"][0]["name"])
+        _, missing = self.call("GET", "/api/stats?project=nope")
+        self.assertEqual(missing["total"], 0)
+
+    def test_stats_rejects_unknown_parameters(self):
+        status, body = self.call("GET", "/api/stats?status=done")
+        self.assertEqual(status, 400)
+        self.assertIn("status", body["error"])
+        status, _ = self.call("POST", "/api/stats", {})
+        self.assertEqual(status, 404)
+
     def test_projects_endpoint(self):
         self.create(project="web")
         self.create(project="Web")
