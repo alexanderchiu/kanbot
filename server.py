@@ -28,7 +28,8 @@ CREATE TABLE {name} (
     idea        INTEGER NOT NULL DEFAULT 0,
     position    INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
+    updated_at  TEXT NOT NULL,
+    completed_at TEXT
 );
 """
 
@@ -45,6 +46,13 @@ API_DOCS = {
         "idea": "boolean, default false; tags the ticket as an idea",
         "position": "integer >= 0; index within the column. If omitted, the ticket "
         "is placed by priority.",
+    },
+    "read_only_fields": {
+        "id": "integer",
+        "created_at": "UTC timestamp",
+        "updated_at": "UTC timestamp",
+        "completed_at": "UTC timestamp set when the ticket moves to done, "
+        "cleared if it leaves done; otherwise null",
     },
     "endpoints": {
         "GET /api/tickets": "List tickets in board order. Optional query parameters: "
@@ -98,15 +106,16 @@ def migrate(db_path):
     """Create the tickets table, or bring an older one up to date.
 
     SQLite can't change a CHECK constraint in place, so a table that predates the
-    cancelled status is rebuilt. This runs in one transaction, so a failure leaves
-    the old table untouched.
+    current schema is rebuilt. This runs in one transaction, so a failure leaves the
+    old table untouched. Tickets already done get updated_at as their completion time,
+    the closest record available.
     """
     with transaction(db_path) as conn:
         row = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'tickets'").fetchone()
         if row is None:
             conn.execute(TICKETS_TABLE.format(name="tickets"))
             return
-        if "cancelled" in row["sql"]:
+        if "completed_at" in row["sql"]:
             return
 
         columns = ", ".join(r["name"] for r in conn.execute("PRAGMA table_info(tickets)"))
@@ -118,6 +127,7 @@ def migrate(db_path):
         conn.execute(f"INSERT INTO tickets_new ({columns}) SELECT {columns} FROM tickets")
         conn.execute("DROP TABLE tickets")
         conn.execute("ALTER TABLE tickets_new RENAME TO tickets")
+        conn.execute("UPDATE tickets SET completed_at = updated_at WHERE status = 'done'")
         conn.execute("DELETE FROM sqlite_sequence WHERE name = 'tickets'")
         if counter:
             conn.execute(
@@ -215,7 +225,7 @@ def create_ticket(db_path, body):
     with transaction(db_path) as conn:
         ticket_id = conn.execute(
             "INSERT INTO tickets (title, description, status, priority, project, idea,"
-            " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            " created_at, updated_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 fields["title"],
                 fields.get("description", ""),
@@ -225,6 +235,7 @@ def create_ticket(db_path, body):
                 fields.get("idea", False),
                 stamp,
                 stamp,
+                stamp if status == "done" else None,
             ),
         ).lastrowid
         place(conn, ticket_id, status, priority, fields.get("position"))
@@ -246,6 +257,8 @@ def update_ticket(db_path, ticket_id, body):
             or priority != current["priority"]
         )
         fields["updated_at"] = now()
+        if status != current["status"]:
+            fields["completed_at"] = fields["updated_at"] if status == "done" else None
         assignments = ", ".join(f"{name} = ?" for name in fields)
         conn.execute(
             f"UPDATE tickets SET {assignments} WHERE id = ?",

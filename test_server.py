@@ -14,7 +14,8 @@ from server import make_server
 class ApiTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.server = make_server(Path(self.tmp.name) / "test.db", 0)
+        self.db = Path(self.tmp.name) / "test.db"
+        self.server = make_server(self.db, 0)
         self.base = f"http://127.0.0.1:{self.server.server_port}"
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
@@ -136,6 +137,36 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(self.call("PATCH", path, {"status": "follow_up"})[0], 200)
         self.assertEqual(self.titles("cancelled"), [])
 
+    def test_completed_at_follows_done_status(self):
+        ticket = self.create()
+        self.assertTrue(ticket["created_at"])
+        self.assertIsNone(ticket["completed_at"])
+        path = f"/api/tickets/{ticket['id']}"
+
+        _, done = self.call("PATCH", path, {"status": "done"})
+        self.assertTrue(done["completed_at"])
+        self.assertEqual(done["created_at"], ticket["created_at"])
+
+        # Editing a finished ticket doesn't change when it was completed.
+        with self.subTest("edit keeps completion time"):
+            conn = sqlite3.connect(self.db)
+            conn.execute("UPDATE tickets SET completed_at = 'earlier'")
+            conn.commit()
+            conn.close()
+            _, edited = self.call("PATCH", path, {"title": "Edited"})
+            self.assertEqual(edited["completed_at"], "earlier")
+            _, again = self.call("PATCH", path, {"status": "done"})
+            self.assertEqual(again["completed_at"], "earlier")
+
+        _, reopened = self.call("PATCH", path, {"status": "in_progress"})
+        self.assertIsNone(reopened["completed_at"])
+        _, cancelled = self.call("PATCH", path, {"status": "cancelled"})
+        self.assertIsNone(cancelled["completed_at"])
+
+        self.assertTrue(self.create(status="done")["completed_at"])
+        status, _ = self.call("PATCH", path, {"completed_at": "2020-01-01T00:00:00Z"})
+        self.assertEqual(status, 400)
+
     def test_delete(self):
         ticket = self.create()
         path = f"/api/tickets/{ticket['id']}"
@@ -221,6 +252,30 @@ class MigrationTest(unittest.TestCase):
             self.assertIs(ticket["idea"], False)
 
 
+    def test_backfills_completed_at_for_done_tickets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "old.db"
+            conn = sqlite3.connect(db)
+            conn.execute(
+                "CREATE TABLE tickets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL,"
+                " description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, priority TEXT NOT NULL,"
+                " project TEXT, idea INTEGER NOT NULL DEFAULT 0, position INTEGER NOT NULL DEFAULT 0,"
+                " created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"
+            )
+            conn.execute(
+                "INSERT INTO tickets (title, status, priority, created_at, updated_at) VALUES"
+                " ('finished', 'done', 'low', 'then', 'finish-time'),"
+                " ('open', 'follow_up', 'low', 'then', 'edit-time')"
+            )
+            conn.commit()
+            conn.close()
+
+            make_server(db, 0).server_close()
+            conn = sqlite3.connect(db)
+            rows = dict(conn.execute("SELECT title, completed_at FROM tickets"))
+            conn.close()
+            self.assertEqual(rows, {"finished": "finish-time", "open": None})
+
     def test_rebuild_allows_cancelled_and_preserves_data_and_ids(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "old.db"
@@ -261,7 +316,7 @@ class MigrationTest(unittest.TestCase):
                     {
                         "id": 1, "title": "first", "description": "", "status": "in_progress",
                         "priority": "high", "project": "web", "idea": True, "position": 4,
-                        "created_at": "then", "updated_at": "later",
+                        "created_at": "then", "updated_at": "later", "completed_at": None,
                     },
                 )
                 self.assertEqual(call("POST", base, {"title": "new"})["id"], 3)
