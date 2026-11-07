@@ -457,6 +457,64 @@ class BackupTest(unittest.TestCase):
 
 
 class MigrationTest(unittest.TestCase):
+    OLD_TABLE = (
+        "CREATE TABLE tickets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL,"
+        " description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, priority TEXT NOT NULL,"
+        " project TEXT, position INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,"
+        " updated_at TEXT NOT NULL{extra})"
+    )
+
+    def test_keeps_real_completion_times(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "old.db"
+            conn = sqlite3.connect(db)
+            conn.execute(self.OLD_TABLE.format(extra=", completed_at TEXT"))
+            conn.execute(
+                "INSERT INTO tickets (title, status, priority, created_at, updated_at, completed_at)"
+                " VALUES ('x', 'done', 'low', 'then', 'edited-later', 'real-completion')"
+            )
+            conn.commit()
+            conn.close()
+            make_server(db, 0).server_close()
+            conn = sqlite3.connect(db)
+            self.assertEqual(
+                conn.execute("SELECT completed_at FROM tickets").fetchone(), ("real-completion",)
+            )
+            conn.close()
+
+    def test_rebuilds_any_table_missing_part_of_the_schema(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "old.db"
+            conn = sqlite3.connect(db)
+            conn.execute(self.OLD_TABLE.format(extra=", assignee TEXT"))
+            conn.commit()
+            conn.close()
+            make_server(db, 0).server_close()
+            conn = sqlite3.connect(db)
+            columns = [row[1] for row in conn.execute("PRAGMA table_info(tickets)")]
+            sql = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'tickets'").fetchone()[0]
+            conn.close()
+            self.assertIn("completed_at", columns)
+            self.assertIn("'blocked'", sql)
+
+    def test_migration_is_backed_up_even_if_file_looks_old(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db, backups = Path(tmp) / "old.db", Path(tmp) / "backups"
+            backups.mkdir()
+            (backups / "old-20200101-000000.db").touch()
+            conn = sqlite3.connect(db)
+            conn.execute(self.OLD_TABLE.format(extra=""))
+            conn.commit()
+            conn.close()
+            os.utime(db, (1, 1))
+            make_server(db, 0, backups).server_close()
+            copies = [path for path in backups.iterdir() if path.stat().st_size]
+            self.assertEqual(len(copies), 1)
+            conn = sqlite3.connect(copies[0])
+            sql = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'tickets'").fetchone()[0]
+            conn.close()
+            self.assertNotIn("assignee", sql)
+
     def test_adds_idea_column_and_keeps_existing_tickets(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "old.db"

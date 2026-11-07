@@ -160,6 +160,17 @@ def transaction(db_path):
         conn.close()
 
 
+def tickets_table_outdated(conn):
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'tickets'").fetchone()
+    if row is None:
+        return False
+    columns = {r["name"] for r in conn.execute("PRAGMA table_info(tickets)")}
+    return not (
+        {"idea", "created_by", "assignee", "completed_at"} <= columns
+        and all(f"'{status}'" in row["sql"] for status in STATUSES)
+    )
+
+
 def migrate(db_path):
     """Create the tickets table, or bring an older one up to date.
 
@@ -178,7 +189,7 @@ def migrate(db_path):
         if row is None:
             conn.execute(TICKETS_TABLE.format(name="tickets"))
             return
-        if "assignee" in row["sql"]:
+        if not tickets_table_outdated(conn):
             return
 
         columns = ", ".join(r["name"] for r in conn.execute("PRAGMA table_info(tickets)"))
@@ -190,7 +201,10 @@ def migrate(db_path):
         conn.execute(f"INSERT INTO tickets_new ({columns}) SELECT {columns} FROM tickets")
         conn.execute("DROP TABLE tickets")
         conn.execute("ALTER TABLE tickets_new RENAME TO tickets")
-        conn.execute("UPDATE tickets SET completed_at = updated_at WHERE status = 'done'")
+        conn.execute(
+            "UPDATE tickets SET completed_at = updated_at"
+            " WHERE status = 'done' AND completed_at IS NULL"
+        )
         conn.execute("DELETE FROM sqlite_sequence WHERE name = 'tickets'")
         if counter:
             conn.execute(
@@ -198,7 +212,7 @@ def migrate(db_path):
             )
 
 
-def backup_database(db_path, backup_dir, keep=BACKUPS_KEPT):
+def backup_database(db_path, backup_dir, keep=BACKUPS_KEPT, force=False):
     """Copy the database into backup_dir, unless it's unchanged since the last copy."""
     db = Path(db_path)
     if not db.exists():
@@ -207,7 +221,7 @@ def backup_database(db_path, backup_dir, keep=BACKUPS_KEPT):
     backup_dir.mkdir(parents=True, exist_ok=True)
     pattern = f"{db.stem}-*.db"
     existing = sorted(backup_dir.glob(pattern))
-    if existing and existing[-1].stat().st_mtime >= db.stat().st_mtime:
+    if not force and existing and existing[-1].stat().st_mtime >= db.stat().st_mtime:
         return None
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -689,8 +703,14 @@ def make_server(db_path, port, backup_dir=None):
     # Bind first: if the port is taken, another server is using the database.
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     if backup_dir:
-        # Back up before migrating, so a bad upgrade can be undone.
-        backup_database(db_path, backup_dir)
+        # Back up before migrating, so a bad upgrade can be undone. A migration always
+        # gets a fresh copy, because a restored file's old mtime can look unchanged.
+        conn = connect(db_path)
+        try:
+            outdated = tickets_table_outdated(conn)
+        finally:
+            conn.close()
+        backup_database(db_path, backup_dir, force=outdated)
     migrate(db_path)
     server.db_path = str(db_path)
     return server
