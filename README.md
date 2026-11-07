@@ -31,6 +31,7 @@ Each time the server starts, it copies the database to `backups/` beside it, unl
 - Cards show the date a ticket was created, or completed once it's done. Open a card to see the exact times.
 - Click a card to edit, cancel or delete it. Cancelled tickets stay on record and are hidden until you tick **Show cancelled**. To reopen one, change its status.
 - Use **+ Add** on a column to create a ticket.
+- Use the search box to find tickets by number, text, project, assignee or creator.
 - Use the **Project** menu to filter the board by project, or tick **Ideas only** to see just ideas.
 
 ## Tickets

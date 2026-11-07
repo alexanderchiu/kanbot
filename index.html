@@ -46,6 +46,7 @@
   }
   h1 { margin: 0 auto 0 0; font-size: 18px; font-weight: 650; color: var(--pink); }
   .filter { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+  #search { width: 200px; max-width: 100%; }
   input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--purple); }
   select, input, textarea {
     background: var(--field);
@@ -208,6 +209,7 @@
 <body>
 <header>
   <h1>Kanban</h1>
+  <input type="search" id="search" placeholder="Search tickets" aria-label="Search tickets" autocomplete="off">
   <label class="filter"><input type="checkbox" id="show-cancelled"> Show cancelled <span id="cancelled-count"></span></label>
   <label class="filter"><input type="checkbox" id="ideas-only"> Ideas only</label>
   <label class="filter">Project
@@ -411,10 +413,19 @@ function renderColumn({ status, label }, visible) {
   return column;
 }
 
+function searchText(ticket) {
+  const { id, title, description, project, assignee, created_by } = ticket;
+  return [`#${id}`, title, description, project, assignee, created_by].join(" ").toLowerCase();
+}
+
 function render() {
   renderFilter();
+  const query = $("search").value.trim().toLowerCase();
   const visible = tickets.filter(
-    (t) => (!filter.value || t.project === filter.value) && (!ideasOnly.checked || t.idea)
+    (t) =>
+      (!filter.value || t.project === filter.value) &&
+      (!ideasOnly.checked || t.idea) &&
+      (!query || searchText(t).includes(query))
   );
   const cancelled = visible.filter((t) => t.status === CANCELLED.status);
   $("cancelled-count").textContent = `(${cancelled.length})`;
@@ -590,6 +601,8 @@ filter.addEventListener("change", () => {
   saveSetting("kanban-project", filter.value);
   render();
 });
+
+$("search").addEventListener("input", render);
 
 ideasOnly.addEventListener("change", () => {
   saveSetting("kanban-ideas-only", ideasOnly.checked ? "1" : "");
