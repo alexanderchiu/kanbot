@@ -337,7 +337,7 @@ def list_projects(db_path):
 class Handler(BaseHTTPRequestHandler):
     server_version = "kanban"
 
-    def log_message(self, format, *args):
+    def log_request(self, code="-", size="-"):
         pass
 
     def send_json(self, status, payload):
@@ -424,8 +424,9 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def make_server(db_path, port):
-    migrate(db_path)
+    # Bind first: if the port is taken, another server is using the database.
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    migrate(db_path)
     server.db_path = str(db_path)
     return server
 

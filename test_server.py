@@ -219,6 +219,19 @@ class ApiTest(unittest.TestCase):
         self.assertEqual([t["position"] for t in tickets], list(range(40)))
 
 
+class StartupTest(unittest.TestCase):
+    def test_taken_port_leaves_database_alone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            first = make_server(Path(tmp) / "first.db", 0)
+            second = Path(tmp) / "second.db"
+            try:
+                with self.assertRaises(OSError):
+                    make_server(second, first.server_port)
+            finally:
+                first.server_close()
+            self.assertFalse(second.exists())
+
+
 class MigrationTest(unittest.TestCase):
     def test_adds_idea_column_and_keeps_existing_tickets(self):
         with tempfile.TemporaryDirectory() as tmp:
