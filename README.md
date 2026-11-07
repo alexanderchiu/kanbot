@@ -9,6 +9,18 @@ uv run server.py                  # http://127.0.0.1:8787
 uv run server.py --port 9000 --db /path/to/board.db
 ```
 
+## Run as a service
+
+To start the board automatically when you log in, enable the systemd user service. It runs on port 8787 and restarts if it fails:
+
+```sh
+systemctl --user enable --now "$PWD/systemd/kanban.service"
+systemctl --user status kanban
+journalctl --user -u kanban -f
+```
+
+The unit file has this repo's path and `/usr/bin/uv` hardcoded, so update them if either moves. Restart the service after pulling code changes to `server.py`. By default it stops when you log out. To keep it running, use `loginctl enable-linger`.
+
 ## Backups
 
 Each time the server starts, it copies the database to `backups/` beside it, unless nothing has changed since the last copy. It keeps the newest 30. To restore one, stop the server and copy a backup over `kanban.db`.

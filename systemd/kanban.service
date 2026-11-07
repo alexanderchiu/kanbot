@@ -1,0 +1,13 @@
+[Unit]
+Description=Local kanban board
+# Keep retrying, so a slow disk mount or a busy port doesn't stop the board for good.
+StartLimitIntervalSec=0
+
+[Service]
+WorkingDirectory=/mnt/data/workspace/kanban
+ExecStart=/usr/bin/uv run --quiet server.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
