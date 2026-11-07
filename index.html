@@ -3,27 +3,36 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#191a17">
 <title>Kanban</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%23272822'/><rect x='3' y='3' width='2.6' height='10' fill='%23f92672'/><rect x='6.7' y='3' width='2.6' height='6' fill='%23e6db74'/><rect x='10.4' y='3' width='2.6' height='8' fill='%23a6e22e'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='4' fill='%23191a17'/><rect x='3.5' y='4' width='2.4' height='8' rx='1' fill='%23a6e22e'/><rect x='6.8' y='4' width='2.4' height='5' rx='1' fill='%23f4f4ee'/><rect x='10.1' y='4' width='2.4' height='6.5' rx='1' fill='%23f4f4ee'/></svg>">
 <style>
+  /* Monokai, used sparingly: warm neutrals everywhere, its colours only as small signals. */
   :root {
     color-scheme: dark;
-    --bg: #1e1f1c;
-    --column: #272822;
-    --card: #3e3d32;
-    --field: #1e1f1c;
-    --text: #f8f8f2;
-    --muted: #b0ab92;
-    --border: #5b5a4b;
+    --bg: #191a17;
+    --surface: #21221e;
+    --raised: #2a2b26;
+    --hover: #32332d;
+    --line: #2f302a;
+    --line-strong: #4a4b42;
+    --text: #f4f4ee;
+    --text-2: #bdbbaa;
+    --text-3: #9a9884;
     --pink: #f92672;
+    --pink-text: #ff6b9f;
     --orange: #fd971f;
     --yellow: #e6db74;
     --green: #a6e22e;
     --blue: #66d9ef;
     --purple: #ae81ff;
-    --on-color: #1e1f1c;
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.5);
+    --on-accent: #191a17;
+    --radius: 8px;
+    --radius-sm: 6px;
+    --ease: 140ms cubic-bezier(0.2, 0, 0, 1);
+    --font: Inter, "SF Pro Text", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
+
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body {
@@ -32,250 +41,453 @@
     flex-direction: column;
     background: var(--bg);
     color: var(--text);
-    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font: 400 13px/1.45 var(--font);
+    -webkit-font-smoothing: antialiased;
+    scrollbar-color: var(--line-strong) transparent;
+    scrollbar-width: thin;
   }
   button, input, select, textarea { font: inherit; color: inherit; }
-  :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  button { cursor: pointer; }
+  a { color: var(--blue); text-decoration: none; overflow-wrap: anywhere; }
+  a:hover { text-decoration: underline; }
+  :focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+  [hidden] { display: none !important; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  kbd {
+    padding: 0 5px;
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    color: var(--text-3);
+    font: inherit;
+    font-size: 11px;
+    line-height: 16px;
+  }
 
+  /* Controls */
+  .control {
+    height: 30px;
+    padding: 0 10px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    transition: border-color var(--ease), background var(--ease);
+  }
+  .control:hover { border-color: var(--line-strong); }
+  select.control, .property select {
+    appearance: none;
+    padding-right: 26px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5 5 6.5 8 3.5' fill='none' stroke='%239a9884' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-position: right 9px center;
+    background-repeat: no-repeat;
+    cursor: pointer;
+  }
+  .button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 30px;
+    padding: 0 12px;
+    background: transparent;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+    white-space: nowrap;
+    transition: background var(--ease), border-color var(--ease);
+  }
+  .button:hover { background: var(--hover); }
+  .button.primary { background: var(--green); border-color: var(--green); color: var(--on-accent); }
+  .button.primary:hover { background: #b8ed4f; border-color: #b8ed4f; }
+  .button.primary kbd { border-color: rgb(25 26 23 / 0.35); color: var(--on-accent); }
+  .button.quiet { border-color: transparent; color: var(--text-2); }
+  .button.quiet:hover { color: var(--text); }
+  .button.danger { border-color: transparent; color: var(--pink-text); }
+  .button.danger.armed { background: var(--pink); border-color: var(--pink); color: var(--on-accent); }
+  .icon-button {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    background: none;
+    border: 0;
+    border-radius: var(--radius-sm);
+    color: var(--text-3);
+    transition: background var(--ease), color var(--ease), opacity var(--ease);
+  }
+  .icon-button:hover { background: var(--hover); color: var(--text); }
+  svg { display: block; }
+
+  /* Top bar */
   header {
+    flex: none;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px 16px;
-    padding: 12px 16px;
+    gap: 8px;
+    padding: 12px 20px;
   }
-  h1 { margin: 0 auto 0 0; font-size: 18px; font-weight: 650; color: var(--pink); }
-  .filter { display: flex; align-items: center; gap: 8px; color: var(--muted); }
-  #search { width: 200px; max-width: 100%; }
-  input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--purple); }
-  select, input, textarea {
-    background: var(--field);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 6px 8px;
+  h1 { margin: 0 auto 0 0; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+  .search { position: relative; display: flex; align-items: center; }
+  .search svg { position: absolute; left: 9px; color: var(--text-3); pointer-events: none; }
+  .search kbd { position: absolute; right: 7px; pointer-events: none; }
+  .search:focus-within kbd { display: none; }
+  #search { width: 220px; max-width: 100%; padding: 0 28px; }
+  #search::placeholder { color: var(--text-3); }
+  #search::-webkit-search-cancel-button { display: none; }
+  .toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    color: var(--text-2);
+    cursor: pointer;
+    user-select: none;
+    transition: background var(--ease), border-color var(--ease), color var(--ease);
   }
+  .toggle:hover { border-color: var(--line-strong); color: var(--text); }
+  .toggle:has(input:checked) { background: var(--raised); border-color: var(--line-strong); color: var(--text); }
+  .toggle:has(input:focus-visible) { outline: 2px solid var(--blue); outline-offset: 1px; }
+  .toggle input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+  .toggle .count { color: var(--text-3); }
+  #filter { max-width: 170px; color: var(--text-2); }
 
   #banner {
-    margin: 0 16px 8px;
+    flex: none;
+    margin: 0 20px 8px;
     padding: 8px 12px;
-    border-radius: 6px;
-    background: var(--pink);
-    color: var(--on-color);
+    background: var(--raised);
+    border-radius: var(--radius-sm);
+    color: var(--pink-text);
   }
 
+  /* Board */
   main {
     flex: 1;
     min-height: 0;
     display: grid;
     grid-auto-flow: column;
-    grid-auto-columns: minmax(0, 1fr);
-    gap: 12px;
-    padding: 0 16px 16px;
+    grid-auto-columns: minmax(250px, 1fr);
+    gap: 4px;
+    padding: 0 12px;
+    overflow-x: auto;
   }
-  .column {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    background: var(--column);
-    border-radius: 10px;
-  }
-  .column-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 8px 8px 14px;
-  }
-  h2 { margin: 0; font-size: 14px; font-weight: 650; }
-  [data-status="follow_up"] h2 { color: var(--blue); }
-  [data-status="in_progress"] h2 { color: var(--orange); }
-  [data-status="blocked"] h2 { color: var(--pink); }
-  [data-status="done"] h2 { color: var(--green); }
-  [data-status="cancelled"] h2 { color: var(--muted); }
-  [data-status="cancelled"] .title { color: var(--muted); text-decoration: line-through; }
-  .count { color: var(--muted); font-variant-numeric: tabular-nums; }
-  .add {
-    margin-left: auto;
-    padding: 2px 10px;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--muted);
-    cursor: pointer;
-  }
-  .add:hover { background: var(--border); color: var(--text); }
+  .column { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .column-head { flex: none; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 4px 0 10px; }
+  .column-head::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--dot); }
+  [data-status="follow_up"] { --dot: var(--blue); }
+  [data-status="in_progress"] { --dot: var(--orange); }
+  [data-status="blocked"] { --dot: var(--pink); }
+  [data-status="done"] { --dot: var(--green); }
+  [data-status="cancelled"] { --dot: var(--text-3); }
+  h2 { margin: 0; font-size: 13px; font-weight: 500; }
+  .count { color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .add { margin-left: auto; opacity: 0; }
+  .column:hover .add, .add:focus-visible { opacity: 1; }
+  @media (hover: none) { .add { opacity: 1; } }
   .cards {
     flex: 1;
-    min-height: 64px;
-    overflow-y: auto;
+    min-height: 72px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 2px 8px 10px;
+    gap: 6px;
+    padding: 2px 8px 20px;
+    overflow-y: auto;
+    scrollbar-color: var(--line-strong) transparent;
+    scrollbar-width: thin;
   }
-  .empty { margin: 8px 6px; color: var(--muted); }
+  .empty { margin: 6px 2px; color: var(--text-3); }
+
   .card {
     flex: none;
     padding: 10px 12px;
-    background: var(--card);
-    border: 1px solid transparent;
-    border-radius: 8px;
-    box-shadow: var(--shadow);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
     cursor: grab;
+    transition: border-color var(--ease), background var(--ease);
   }
-  .card:hover { border-color: var(--border); }
-  .card.dragging { opacity: 0.45; }
-  .drop-line { flex: none; height: 3px; margin: -2px 0; border-radius: 2px; background: var(--blue); }
+  .card:hover { background: var(--raised); border-color: var(--line-strong); }
+  .card:active { cursor: grabbing; }
+  .card.dragging { opacity: 0.4; }
+  .drop-line { flex: none; height: 2px; margin: -4px 0; border-radius: 1px; background: var(--blue); }
   .title {
     display: block;
     width: 100%;
     padding: 0;
     background: none;
     border: 0;
+    border-radius: 2px;
     text-align: left;
-    font-weight: 550;
+    font-weight: 500;
+    letter-spacing: -0.005em;
     overflow-wrap: anywhere;
     cursor: pointer;
   }
-  a { color: var(--blue); overflow-wrap: anywhere; }
-  #description-links { display: grid; gap: 2px; font-size: 13px; }
-  #description-links:empty { display: none; }
+  [data-status="cancelled"] .title,
+  [data-status="done"] .title { color: var(--text-2); }
+  [data-status="cancelled"] .title { text-decoration: line-through; }
   .snippet {
     display: -webkit-box;
-    margin-top: 2px;
+    margin-top: 3px;
     overflow: hidden;
-    color: var(--muted);
-    font-size: 13px;
+    color: var(--text-3);
+    font-size: 12px;
     overflow-wrap: anywhere;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     line-clamp: 2;
   }
-  .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; }
-  .pill { padding: 1px 7px; border-radius: 999px; font-weight: 550; overflow-wrap: anywhere; }
-  .high { background: var(--pink); color: var(--on-color); }
-  .medium { background: var(--yellow); color: var(--on-color); }
-  .low { background: var(--border); color: var(--text); }
-  .idea { background: var(--purple); color: var(--on-color); }
-  .project {
-    padding: 0 6px;
-    border: 1px solid var(--chip);
-    border-radius: 4px;
-    color: var(--chip);
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 10px;
+    margin-top: 8px;
+    color: var(--text-3);
+    font-size: 12px;
   }
-  .assignee { color: var(--text); overflow-wrap: anywhere; }
-  .note-count { color: var(--muted); }
-  .id { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
-
-  dialog {
-    width: min(560px, calc(100vw - 32px));
-    padding: 20px;
-    background: var(--column);
+  .priority { display: flex; }
+  .priority rect { fill: var(--line-strong); }
+  .priority.low rect:nth-child(-n+1) { fill: var(--text-2); }
+  .priority.medium rect:nth-child(-n+2) { fill: var(--yellow); }
+  .priority.high rect { fill: var(--pink); }
+  .idea { color: var(--purple); }
+  .project, .assignee { overflow-wrap: anywhere; }
+  .assignee { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); }
+  .avatar {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    flex: none;
+    background: var(--hover);
+    border-radius: 50%;
     color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
   }
-  dialog::backdrop { background: rgb(0 0 0 / 0.6); }
-  dialog h2 { margin-bottom: 14px; font-size: 16px; color: var(--text); }
-  form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; min-width: 0; }
-  label input, label select, label textarea { width: 100%; color: var(--text); font-size: 14px; }
-  .wide { grid-column: 1 / -1; }
-  label.check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
-  label.check input { width: 16px; }
-  textarea { min-height: 140px; resize: vertical; }
-  #activity { display: grid; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
-  h3 { margin: 0; font-size: 14px; font-weight: 650; }
-  #notes { display: grid; gap: 8px; }
-  #notes:empty::before { content: "No notes yet"; color: var(--muted); }
-  .note { padding: 8px 10px; background: var(--card); border-radius: 6px; }
-  .note-meta { color: var(--muted); font-size: 12px; }
-  .note-body { white-space: pre-wrap; overflow-wrap: anywhere; }
-  #note-input { min-height: 64px; }
-  summary { cursor: pointer; font-weight: 650; }
-  #history { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 13px; }
-  #history .note-meta { display: block; }
-  .history-change { overflow-wrap: anywhere; }
-  #error { color: var(--pink); }
-  #stamps { color: var(--muted); font-size: 12px; }
-  .actions { display: flex; justify-content: flex-end; gap: 8px; }
-  .actions button {
-    padding: 7px 14px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--card);
+  .note-count { display: inline-flex; align-items: center; gap: 3px; }
+  .id { margin-left: auto; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* Ticket panel */
+  dialog {
+    position: fixed;
+    inset: 0 0 0 auto;
+    width: min(480px, 100vw);
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    background: var(--surface);
+    color: var(--text);
+    border: 0;
+    border-left: 1px solid var(--line-strong);
+  }
+  dialog[open] { display: flex; flex-direction: column; animation: slide-in 180ms cubic-bezier(0.2, 0, 0, 1); }
+  dialog::backdrop { background: rgb(0 0 0 / 0.35); animation: fade-in 180ms ease; }
+  @keyframes slide-in { from { opacity: 0; transform: translateX(16px); } }
+  @keyframes fade-in { from { opacity: 0; } }
+  .panel-head { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 4px 20px; }
+  .panel-head h2 { color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .panel-body { flex: 1; min-height: 0; padding: 0 20px 24px; overflow-y: auto; scrollbar-color: var(--line-strong) transparent; scrollbar-width: thin; }
+  .bare {
+    display: block;
+    width: 100%;
+    padding: 4px 6px;
+    margin-left: -6px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    resize: none;
+    field-sizing: content;
+    transition: background var(--ease), border-color var(--ease);
+  }
+  .bare:hover { background: var(--raised); }
+  .bare:focus { background: var(--raised); border-color: var(--line-strong); outline: none; }
+  .bare::placeholder { color: var(--text-3); }
+  [name="title"] { font-size: 18px; font-weight: 600; line-height: 1.3; letter-spacing: -0.015em; }
+  [name="description"] { min-height: 72px; margin-top: 4px; color: var(--text-2); line-height: 1.55; }
+  #description-links { display: grid; gap: 2px; margin-top: 4px; font-size: 12px; }
+  #description-links:empty { display: none; }
+  .properties { display: grid; gap: 2px; margin: 16px 0 0; }
+  .property { display: grid; grid-template-columns: 100px minmax(0, 1fr); align-items: center; min-height: 30px; color: var(--text-3); }
+  .property select, .property input:not([type="checkbox"]) {
+    width: 100%;
+    height: 28px;
+    padding: 0 6px;
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    transition: background-color var(--ease), border-color var(--ease);
+  }
+  .property select { padding-right: 26px; }
+  .property select:hover, .property input:hover:not([type="checkbox"]) { background-color: var(--raised); }
+  .property input:focus:not([type="checkbox"]) { background-color: var(--raised); border-color: var(--line-strong); outline: none; }
+  .property input::placeholder { color: var(--text-3); }
+  .switch {
+    appearance: none;
+    position: relative;
+    width: 28px;
+    height: 16px;
+    margin: 0 0 0 6px;
+    background: var(--line-strong);
+    border-radius: 8px;
     cursor: pointer;
+    transition: background var(--ease);
   }
-  .actions .primary { background: var(--green); border-color: var(--green); color: var(--on-color); font-weight: 600; }
-  .actions .delete { margin-right: auto; color: var(--pink); }
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    background: var(--text);
+    border-radius: 50%;
+    transition: transform var(--ease);
+  }
+  .switch:checked { background: var(--purple); }
+  .switch:checked::after { transform: translateX(12px); }
+  #stamps { display: grid; gap: 2px; margin-top: 2px; }
+  .stamp { display: grid; grid-template-columns: 100px minmax(0, 1fr); min-height: 24px; align-items: center; color: var(--text-3); }
+  .stamp span:last-child { padding-left: 7px; color: var(--text-2); font-size: 12px; overflow-wrap: anywhere; }
+
+  #activity { display: grid; gap: 10px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+  h3 { margin: 0; font-size: 13px; font-weight: 500; }
+  #notes { display: grid; gap: 8px; }
+  #notes:empty::before { content: "No notes yet"; color: var(--text-3); }
+  .note { padding: 8px 10px; background: var(--raised); border-radius: var(--radius-sm); }
+  .note-meta { color: var(--text-3); font-size: 12px; }
+  .note-body { margin-top: 2px; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .composer { display: grid; gap: 6px; padding: 8px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+  .composer:focus-within { border-color: var(--line-strong); }
+  #note-input { width: 100%; min-height: 40px; padding: 0 2px; background: none; border: 0; outline: none; resize: none; field-sizing: content; }
+  #note-input::placeholder { color: var(--text-3); }
+  .composer-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; color: var(--text-3); font-size: 12px; }
+  .composer .button { height: 26px; }
+  summary { color: var(--text-2); font-weight: 500; cursor: pointer; }
+  summary:hover { color: var(--text); }
+  #history { display: grid; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+  .history-change { display: block; color: var(--text-2); overflow-wrap: anywhere; }
+
+  .panel-foot {
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 20px;
+    border-top: 1px solid var(--line);
+  }
+  .panel-foot .primary { margin-left: auto; }
+  #error { flex-basis: 100%; color: var(--pink-text); }
+
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: 20px;
+    z-index: 10;
+    max-width: calc(100vw - 32px);
+    padding: 8px 14px;
+    background: var(--hover);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+    transform: translateX(-50%);
+    animation: fade-in 140ms ease;
+  }
 
   @media (max-width: 800px) {
     html, body { height: auto; }
-    main { grid-auto-flow: row; }
-    .cards { overflow-y: visible; }
-    form { grid-template-columns: minmax(0, 1fr); }
+    header { padding: 12px 16px; }
+    h1 { flex-basis: 100%; }
+    .search { flex: 1 1 100%; }
+    #search { width: 100%; }
+    .hint { display: none; }
+    main { grid-auto-flow: row; grid-auto-columns: auto; gap: 16px; padding: 0 8px 24px; overflow-x: visible; }
+    .cards { overflow-y: visible; padding-bottom: 0; }
+    #banner { margin-inline: 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after, ::backdrop { animation: none !important; transition: none !important; }
   }
 </style>
 </head>
 <body>
 <header>
   <h1>Kanban</h1>
-  <input type="search" id="search" placeholder="Search tickets" aria-label="Search tickets" autocomplete="off">
-  <label class="filter"><input type="checkbox" id="show-cancelled"> Show cancelled <span id="cancelled-count"></span></label>
-  <label class="filter"><input type="checkbox" id="ideas-only"> Ideas only</label>
-  <label class="filter">Project
-    <select id="filter"></select>
+  <label class="search">
+    <span class="sr-only">Search tickets</span>
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+    <input type="search" id="search" class="control" placeholder="Search" autocomplete="off">
+    <kbd class="hint" aria-hidden="true">/</kbd>
   </label>
+  <label class="sr-only" for="filter">Project</label>
+  <select id="filter" class="control"></select>
+  <label class="toggle"><input type="checkbox" id="ideas-only"> Ideas</label>
+  <label class="toggle"><input type="checkbox" id="show-cancelled"> Cancelled <span class="count" id="cancelled-count"></span></label>
+  <button type="button" class="button primary" id="new-ticket">New ticket <kbd class="hint" aria-hidden="true">N</kbd></button>
 </header>
 <div id="banner" role="alert" hidden>Can't reach the kanban server. Retrying…</div>
 <main id="board"></main>
+<div id="toast" role="status" hidden></div>
 
-<dialog id="dialog">
-  <h2 id="dialog-title"></h2>
-  <form id="form" method="dialog">
-    <label class="wide">Title
-      <input name="title" required maxlength="500" autocomplete="off">
-    </label>
-    <label class="wide">Description
-      <textarea name="description"></textarea>
-    </label>
-    <div id="description-links" class="wide"></div>
-    <label>Status
-      <select name="status"></select>
-    </label>
-    <label>Priority
-      <select name="priority"></select>
-    </label>
-    <label>Project
-      <input name="project" list="project-list" autocomplete="off">
-      <datalist id="project-list"></datalist>
-    </label>
-    <label>Assignee
-      <input name="assignee" autocomplete="off">
-    </label>
-    <label class="check wide"><input type="checkbox" name="idea"> This ticket is an idea</label>
-    <div id="error" class="wide" role="alert" hidden></div>
-    <div id="stamps" class="wide" hidden></div>
-    <div class="actions wide">
-      <button type="button" class="delete" id="delete">Delete</button>
-      <button type="button" id="cancel-ticket">Cancel ticket</button>
-      <button type="button" id="close">Close</button>
-      <button type="submit" class="primary">Save</button>
-    </div>
-  </form>
-  <section id="activity" hidden>
-    <h3>Notes</h3>
-    <div id="notes"></div>
-    <label>Add a note
-      <textarea id="note-input"></textarea>
-    </label>
-    <div class="actions">
-      <button type="button" id="add-note">Add note</button>
-    </div>
-    <details>
-      <summary>History</summary>
-      <ul id="history"></ul>
-    </details>
-  </section>
+<dialog id="dialog" aria-labelledby="dialog-title">
+  <div class="panel-head">
+    <h2 id="dialog-title"></h2>
+    <button type="button" class="icon-button" id="close" aria-label="Close">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg>
+    </button>
+  </div>
+  <div class="panel-body">
+    <form id="form">
+      <label class="sr-only" for="ticket-title">Title</label>
+      <textarea id="ticket-title" name="title" class="bare" rows="1" required maxlength="500" placeholder="Ticket title" autocomplete="off"></textarea>
+      <label class="sr-only" for="ticket-description">Description</label>
+      <textarea id="ticket-description" name="description" class="bare" rows="3" placeholder="Add a description"></textarea>
+      <div id="description-links"></div>
+      <div class="properties">
+        <label class="property">Status <select name="status"></select></label>
+        <label class="property">Priority <select name="priority"></select></label>
+        <label class="property">Project
+          <input name="project" list="project-list" placeholder="None" autocomplete="off">
+        </label>
+        <datalist id="project-list"></datalist>
+        <label class="property">Assignee <input name="assignee" placeholder="Unassigned" autocomplete="off"></label>
+        <label class="property">Idea <input type="checkbox" class="switch" name="idea"></label>
+      </div>
+      <div id="stamps" hidden></div>
+    </form>
+    <section id="activity" hidden>
+      <h3>Notes</h3>
+      <div id="notes"></div>
+      <div class="composer">
+        <label class="sr-only" for="note-input">Add a note</label>
+        <textarea id="note-input" placeholder="Add a note"></textarea>
+        <div class="composer-actions">
+          <span class="hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd></span>
+          <button type="button" class="button" id="add-note">Add note</button>
+        </div>
+      </div>
+      <details>
+        <summary>History</summary>
+        <ul id="history"></ul>
+      </details>
+    </section>
+  </div>
+  <div class="panel-foot">
+    <div id="error" role="alert" hidden></div>
+    <button type="button" class="button danger" id="delete">Delete</button>
+    <button type="button" class="button quiet" id="cancel-ticket">Cancel ticket</button>
+    <button type="submit" form="form" class="button primary">Save</button>
+  </div>
 </dialog>
 
 <script>
@@ -291,16 +503,28 @@ const PRIORITIES = [
   { value: "medium", label: "Medium" },
   { value: "low", label: "Low" },
 ];
-const PROJECT_COLORS = ["var(--green)", "var(--blue)", "var(--yellow)", "var(--orange)"];
 const POLL_MS = 3000;
+const TOAST_MS = 4000;
+const CONFIRM_MS = 4000;
+
+// Static markup only. Ticket text never goes through innerHTML.
+const ICONS = {
+  plus: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg>',
+  bars: '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="7" width="2.4" height="4" rx="0.6"/><rect x="4.8" y="4" width="2.4" height="7" rx="0.6"/><rect x="8.6" y="1" width="2.4" height="10" rx="0.6"/></svg>',
+  note: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.5h11v8h-6l-3 2.5v-2.5h-2z"/></svg>',
+};
 
 const $ = (id) => document.getElementById(id);
 const board = $("board"), filter = $("filter"), ideasOnly = $("ideas-only"), showCancelled = $("show-cancelled"), dialog = $("dialog"), form = $("form");
+const ALL_COLUMNS = [...COLUMNS, CANCELLED];
 
 let tickets = [];
 let lastPayload = null;
 let draggingId = null;
-let editing = null; // The ticket open in the dialog; null when creating one.
+let editing = null; // The ticket open in the panel; null when creating one.
+let initialValues = null;
+let warnedUnsaved = false;
+let toastTimer, confirmTimer;
 const dropLine = Object.assign(document.createElement("div"), { className: "drop-line" });
 
 // All ticket text comes from agents, so it is only ever inserted as text nodes.
@@ -308,6 +532,12 @@ function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function icon(name, className) {
+  const node = el("span", className);
+  node.innerHTML = ICONS[name];
   return node;
 }
 
@@ -342,12 +572,6 @@ function renderDescriptionLinks() {
   $("description-links").replaceChildren(...urls.map(linkNode));
 }
 
-function projectColor(name) {
-  let hash = 0;
-  for (const ch of name) hash = (hash * 31 + ch.codePointAt(0)) % PROJECT_COLORS.length;
-  return PROJECT_COLORS[hash];
-}
-
 async function api(method, path, body) {
   const response = await fetch(path, {
     method,
@@ -367,6 +591,14 @@ function saveSetting(key, value) {
   try { localStorage.setItem(key, value); } catch {}
 }
 
+function showToast(message) {
+  const toast = $("toast");
+  toast.textContent = message;
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.hidden = true; }, TOAST_MS);
+}
+
 function renderFilter() {
   const projects = [...new Set(tickets.map((t) => t.project).filter(Boolean))].sort();
   const current = filter.value || loadSetting("kanban-project");
@@ -377,9 +609,8 @@ function renderFilter() {
   $("project-list").replaceChildren(...projects.map((p) => new Option(p, p)));
 }
 
-function shortDate(iso) {
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
+const shortDate = (iso) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+const timestamp = (iso) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
 function renderCard(ticket) {
   // A div, not a button, because buttons can't contain working links.
@@ -395,27 +626,37 @@ function renderCard(ticket) {
     card.append(snippet);
   }
 
-  const meta = el("span", "meta");
-  meta.append(el("span", `pill ${ticket.priority}`, PRIORITIES.find((p) => p.value === ticket.priority).label));
-  if (ticket.idea) meta.append(el("span", "pill idea", "Idea"));
-  if (ticket.project) {
-    const chip = el("span", "pill project", ticket.project);
-    chip.style.setProperty("--chip", projectColor(ticket.project));
-    meta.append(chip);
+  const meta = el("div", "meta");
+  const priority = PRIORITIES.find((p) => p.value === ticket.priority).label;
+  const bars = icon("bars", `priority ${ticket.priority}`);
+  bars.title = `${priority} priority`;
+  bars.append(el("span", "sr-only", `${priority} priority`));
+  meta.append(bars);
+  if (ticket.idea) meta.append(el("span", "idea", "Idea"));
+  if (ticket.project) meta.append(el("span", "project", ticket.project));
+  if (ticket.assignee) {
+    const assignee = el("span", "assignee");
+    assignee.title = `Assigned to ${ticket.assignee}`;
+    assignee.append(el("span", "avatar", ticket.assignee[0]), ticket.assignee);
+    meta.append(assignee);
   }
-  const date = ticket.completed_at
-    ? `Completed ${shortDate(ticket.completed_at)}`
-    : `Created ${shortDate(ticket.created_at)}`;
-  if (ticket.assignee) meta.append(el("span", "assignee", `@${ticket.assignee}`));
   if (ticket.note_count) {
     const noun = ticket.note_count === 1 ? "note" : "notes";
-    meta.append(el("span", "note-count", `${ticket.note_count} ${noun}`));
+    const notes = icon("note", "note-count");
+    notes.title = `${ticket.note_count} ${noun}`;
+    notes.append(String(ticket.note_count));
+    meta.append(notes);
   }
-  meta.append(el("span", "id", `${date} · #${ticket.id}`));
+  const date = ticket.completed_at
+    ? ["Completed", ticket.completed_at]
+    : ["Created", ticket.created_at];
+  const id = el("span", "id", `#${ticket.id} · ${shortDate(date[1])}`);
+  id.title = `${date[0]} ${timestamp(date[1])}`;
+  meta.append(id);
   card.append(meta);
 
   card.addEventListener("click", (event) => {
-    if (!event.target.closest("a")) openDialog(ticket);
+    if (!event.target.closest("a")) openPanel(ticket);
   });
   card.addEventListener("dragstart", (event) => {
     draggingId = ticket.id;
@@ -424,6 +665,7 @@ function renderCard(ticket) {
     requestAnimationFrame(() => card.classList.add("dragging"));
   });
   card.addEventListener("dragend", () => {
+    if (draggingId === null) return;
     draggingId = null;
     dropLine.remove();
     refresh(true);
@@ -434,13 +676,16 @@ function renderCard(ticket) {
 function renderColumn({ status, label }, visible) {
   const column = el("section", "column");
   column.dataset.status = status;
+  column.setAttribute("aria-label", label);
   const head = el("div", "column-head");
   head.append(el("h2", "", label), el("span", "count", visible.length));
   if (status !== CANCELLED.status) {
-    const add = el("button", "add", "+ Add");
+    const add = el("button", "icon-button add");
     add.type = "button";
+    add.innerHTML = ICONS.plus;
     add.setAttribute("aria-label", `Add ticket to ${label}`);
-    add.addEventListener("click", () => openDialog(null, status));
+    add.title = "Add ticket";
+    add.addEventListener("click", () => openPanel(null, status));
     head.append(add);
   }
 
@@ -478,13 +723,24 @@ function render() {
       (!query || searchText(t).includes(query))
   );
   const cancelled = visible.filter((t) => t.status === CANCELLED.status);
-  $("cancelled-count").textContent = `(${cancelled.length})`;
-  const columns = showCancelled.checked ? [...COLUMNS, CANCELLED] : COLUMNS;
+  $("cancelled-count").textContent = cancelled.length;
+
+  // Rebuilding the board mustn't lose the reader's place when an agent changes a ticket.
+  const scroll = {};
+  for (const column of board.children) scroll[column.dataset.status] = column.querySelector(".cards").scrollTop;
+  const boardScroll = board.scrollLeft;
+  const focused = document.activeElement?.closest?.(".card")?.dataset.id;
+
+  const columns = showCancelled.checked ? ALL_COLUMNS : COLUMNS;
   board.replaceChildren(
     ...columns.map((column) =>
       renderColumn(column, visible.filter((t) => t.status === column.status))
     )
   );
+
+  for (const column of board.children) column.querySelector(".cards").scrollTop = scroll[column.dataset.status] ?? 0;
+  board.scrollLeft = boardScroll;
+  if (focused) board.querySelector(`.card[data-id="${focused}"] .title`)?.focus({ preventScroll: true });
 }
 
 function cardAfterPointer(cards, y) {
@@ -508,17 +764,60 @@ async function drop(status, cards, id) {
     if (before) position = indexOf(before) + 1;
   }
   dropLine.remove();
+  draggingId = null;
+
+  // Show the move straight away, then let the next refresh confirm it.
+  const ticket = tickets.find((t) => t.id === id);
+  const others = tickets.filter((t) => t.id !== id);
+  const after = column[position];
+  others.splice(after ? others.indexOf(after) : others.length, 0, { ...ticket, status });
+  tickets = others;
+  render();
+
   try {
     await api("PATCH", `/api/tickets/${id}`, { status, position, actor: "user" });
   } catch (error) {
-    alert(error.message);
+    showToast(error.message);
   }
   await refresh(true);
 }
 
-function openDialog(ticket, status = "follow_up") {
+function formValues() {
+  return {
+    title: form.elements.title.value,
+    description: form.elements.description.value,
+    status: form.elements.status.value,
+    priority: form.elements.priority.value,
+    project: form.elements.project.value.trim().toLowerCase() || null,
+    idea: form.elements.idea.checked,
+    assignee: form.elements.assignee.value.trim().toLowerCase() || null,
+  };
+}
+
+function isDirty() {
+  return (
+    JSON.stringify(formValues()) !== JSON.stringify(initialValues) ||
+    $("note-input").value.trim() !== ""
+  );
+}
+
+function renderStamps(ticket) {
+  const rows = [["Created", `${timestamp(ticket.created_at)}${ticket.created_by ? ` by ${ticket.created_by}` : ""}`]];
+  if (ticket.completed_at) rows.push(["Completed", timestamp(ticket.completed_at)]);
+  rows.push(["Updated", timestamp(ticket.updated_at)]);
+  $("stamps").replaceChildren(
+    ...rows.map(([label, value]) => {
+      const row = el("div", "stamp");
+      row.append(el("span", "", label), el("span", "", value));
+      return row;
+    })
+  );
+}
+
+function openPanel(ticket, status = "follow_up") {
   editing = ticket;
-  $("dialog-title").textContent = ticket ? `Edit ticket #${ticket.id}` : "New ticket";
+  warnedUnsaved = false;
+  $("dialog-title").textContent = ticket ? `#${ticket.id}` : "New ticket";
   form.elements.title.value = ticket?.title ?? "";
   form.elements.description.value = ticket?.description ?? "";
   renderDescriptionLinks();
@@ -527,26 +826,32 @@ function openDialog(ticket, status = "follow_up") {
   form.elements.project.value = ticket ? ticket.project ?? "" : filter.value;
   form.elements.assignee.value = ticket?.assignee ?? "";
   form.elements.idea.checked = ticket ? ticket.idea : ideasOnly.checked;
+  $("note-input").value = "";
+  initialValues = formValues();
+
+  disarmDelete();
   $("delete").hidden = !ticket;
   $("cancel-ticket").hidden = !ticket || ticket.status === CANCELLED.status;
   $("error").hidden = true;
   $("stamps").hidden = !ticket;
-  if (ticket) {
-    const when = timestamp;
-    const completed = ticket.completed_at ? ` · Completed ${when(ticket.completed_at)}` : "";
-    const creator = ticket.created_by ? ` by ${ticket.created_by}` : "";
-    $("stamps").textContent = `Created ${when(ticket.created_at)}${creator}${completed} · Updated ${when(ticket.updated_at)}`;
-  }
+  if (ticket) renderStamps(ticket);
   $("activity").hidden = !ticket;
   $("notes").replaceChildren();
   $("history").replaceChildren();
-  $("note-input").value = "";
   if (ticket) loadActivity(ticket.id);
   dialog.showModal();
   form.elements.title.focus();
 }
 
-const timestamp = (iso) => new Date(iso).toLocaleString();
+// Closing with edits in progress takes a second attempt, so a stray click can't lose them.
+function requestClose() {
+  if (isDirty() && !warnedUnsaved) {
+    warnedUnsaved = true;
+    showError("You have unsaved changes. Close again to discard them.");
+    return;
+  }
+  dialog.close();
+}
 
 async function loadActivity(id) {
   try {
@@ -562,8 +867,7 @@ async function loadActivity(id) {
 function describeChange({ field, old_value, new_value }) {
   if (field === "created") return "Created the ticket";
   if (field === "description") return "Changed the description";
-  const label = (value) =>
-    [...COLUMNS, CANCELLED].find((c) => c.status === value)?.label ?? value ?? "none";
+  const label = (value) => ALL_COLUMNS.find((c) => c.status === value)?.label ?? value ?? "none";
   return `Changed ${field}: ${label(old_value)} → ${label(new_value)}`;
 }
 
@@ -588,17 +892,30 @@ function showError(message) {
   $("error").hidden = false;
 }
 
+function disarmDelete() {
+  clearTimeout(confirmTimer);
+  $("delete").textContent = "Delete";
+  $("delete").classList.remove("armed");
+}
+
+async function addNote() {
+  const body = $("note-input").value.trim();
+  if (!body) return;
+  try {
+    await api("POST", `/api/tickets/${editing.id}/notes`, { body, author: "user" });
+    $("note-input").value = "";
+    $("error").hidden = true;
+    warnedUnsaved = false;
+    await loadActivity(editing.id);
+    await refresh(true);
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const values = {
-    title: form.elements.title.value,
-    description: form.elements.description.value,
-    status: form.elements.status.value,
-    priority: form.elements.priority.value,
-    project: form.elements.project.value.trim().toLowerCase() || null,
-    idea: form.elements.idea.checked,
-    assignee: form.elements.assignee.value.trim().toLowerCase() || null,
-  };
+  const values = formValues();
   try {
     if (editing) {
       // Send only what changed, so saving can't undo an agent's concurrent edit.
@@ -608,6 +925,7 @@ form.addEventListener("submit", async (event) => {
       if (Object.keys(changes).length) {
         await api("PATCH", `/api/tickets/${editing.id}`, { ...changes, actor: "user" });
       }
+      if (changes.status === CANCELLED.status) showToast(`Ticket #${editing.id} cancelled`);
     } else {
       await api("POST", "/api/tickets", { ...values, created_by: "user" });
     }
@@ -618,32 +936,45 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
-$("close").addEventListener("click", () => dialog.close());
+$("close").addEventListener("click", requestClose);
+dialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  requestClose();
+});
+dialog.addEventListener("click", (event) => {
+  if (event.target !== dialog) return;
+  const box = dialog.getBoundingClientRect();
+  if (event.clientX < box.left) requestClose();
+});
 form.elements.description.addEventListener("input", renderDescriptionLinks);
-
-$("add-note").addEventListener("click", async () => {
-  const body = $("note-input").value.trim();
-  if (!body) return;
-  try {
-    await api("POST", `/api/tickets/${editing.id}/notes`, { body, author: "user" });
-    $("note-input").value = "";
-    await loadActivity(editing.id);
-    await refresh(true);
-  } catch (error) {
-    showError(error.message);
-  }
+form.elements.title.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  form.requestSubmit();
 });
 
-// Submitting the form keeps any edits made in the dialog before cancelling.
+$("add-note").addEventListener("click", addNote);
+$("note-input").addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) addNote();
+});
+
+// Submitting the form keeps any edits made in the panel before cancelling.
 $("cancel-ticket").addEventListener("click", () => {
   form.elements.status.value = CANCELLED.status;
   form.requestSubmit();
 });
 
 $("delete").addEventListener("click", async () => {
-  if (!confirm(`Delete ticket #${editing.id}? This can't be undone.`)) return;
+  if (!$("delete").classList.contains("armed")) {
+    $("delete").textContent = "Confirm delete";
+    $("delete").classList.add("armed");
+    confirmTimer = setTimeout(disarmDelete, CONFIRM_MS);
+    return;
+  }
+  disarmDelete();
   try {
     await api("DELETE", `/api/tickets/${editing.id}`);
+    showToast(`Ticket #${editing.id} deleted`);
     dialog.close();
     await refresh(true);
   } catch (error) {
@@ -651,12 +982,20 @@ $("delete").addEventListener("click", async () => {
   }
 });
 
+$("new-ticket").addEventListener("click", () => openPanel(null));
+
 filter.addEventListener("change", () => {
   saveSetting("kanban-project", filter.value);
   render();
 });
 
 $("search").addEventListener("input", render);
+$("search").addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  $("search").value = "";
+  $("search").blur();
+  render();
+});
 
 ideasOnly.addEventListener("change", () => {
   saveSetting("kanban-ideas-only", ideasOnly.checked ? "1" : "");
@@ -666,6 +1005,18 @@ ideasOnly.addEventListener("change", () => {
 showCancelled.addEventListener("change", () => {
   saveSetting("kanban-show-cancelled", showCancelled.checked ? "1" : "");
   render();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (dialog.open || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (event.target.closest("input, textarea, select")) return;
+  if (event.key === "/") {
+    event.preventDefault();
+    $("search").focus();
+  } else if (event.key.toLowerCase() === "n") {
+    event.preventDefault();
+    openPanel(null);
+  }
 });
 
 async function refresh(force = false) {
@@ -684,7 +1035,7 @@ async function refresh(force = false) {
   }
 }
 
-form.elements.status.append(...[...COLUMNS, CANCELLED].map((c) => new Option(c.label, c.status)));
+form.elements.status.append(...ALL_COLUMNS.map((c) => new Option(c.label, c.status)));
 form.elements.priority.append(...PRIORITIES.map((p) => new Option(p.label, p.value)));
 ideasOnly.checked = loadSetting("kanban-ideas-only") === "1";
 showCancelled.checked = loadSetting("kanban-show-cancelled") === "1";
