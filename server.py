@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local-only kanban board: JSON API for agents, web UI for humans. Stdlib only."""
+"""Kanbot, a local-only kanban board: JSON API for agents, web UI for humans. Stdlib only."""
 import argparse
 import json
 import re
@@ -68,7 +68,7 @@ SELECT_TICKET = (
 )
 
 API_DOCS = {
-    "description": "Local kanban board. Request and response bodies are JSON.",
+    "description": "Kanbot, a local kanban board. Request and response bodies are JSON.",
     "statuses": list(STATUSES),
     "priorities": list(PRIORITIES),
     "ticket_fields": {
@@ -496,7 +496,7 @@ def list_projects(db_path):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "kanban"
+    server_version = "kanbot"
 
     def log_request(self, code="-", size="-"):
         pass
@@ -611,7 +611,7 @@ def main():
     args = parser.parse_args()
     backup_dir = args.backup_dir or Path(args.db).resolve().parent / "backups"
     server = make_server(args.db, args.port, backup_dir)
-    print(f"Kanban running at http://127.0.0.1:{server.server_port} (db: {args.db})", flush=True)
+    print(f"Kanbot running at http://127.0.0.1:{server.server_port} (db: {args.db})", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

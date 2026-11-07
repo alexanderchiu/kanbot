@@ -1,4 +1,4 @@
-# Kanban
+# Kanbot
 
 A local kanban board with a web UI for you and a JSON API for your agents. It has no third-party dependencies, uses [uv](https://docs.astral.sh/uv/) to manage Python, and stores everything in `kanban.db` (SQLite) next to the server. The server listens on `127.0.0.1` only.
 
@@ -20,11 +20,11 @@ To run the board as a systemd user service that starts when you log in and resta
 Run `./install.sh` again after updating the code. The service doesn't restart itself when files change, and `index.html` is served fresh on every request, so the page can get ahead of a server that hasn't restarted.
 
 ```sh
-systemctl --user status kanban
-journalctl --user -u kanban -f
+systemctl --user status kanbot
+journalctl --user -u kanbot -f
 ```
 
-The service stops when you log out, unless you run `loginctl enable-linger`. To remove it, run `systemctl --user disable --now kanban`, then delete `~/.config/systemd/user/kanban.service`.
+The service stops when you log out, unless you run `loginctl enable-linger`. To remove it, run `systemctl --user disable --now kanbot`, then delete `~/.config/systemd/user/kanbot.service`.
 
 ## Backups
 
@@ -90,7 +90,7 @@ Paste this into your `CLAUDE.md` or your agent's instructions:
 ````markdown
 ## Task board
 
-Track work on the local kanban board at http://127.0.0.1:8787. Set `project` to the
+Track work on Kanbot, the local kanban board, at http://127.0.0.1:8787. Set `project` to the
 current project's name. Run `curl -s http://127.0.0.1:8787/api/projects` to reuse an
 existing tag.
 

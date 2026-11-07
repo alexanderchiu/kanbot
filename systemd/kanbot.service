@@ -1,5 +1,5 @@
 [Unit]
-Description=Local kanban board
+Description=Kanbot, a local kanban board
 # Keep retrying, so a slow disk mount or a busy port doesn't stop the board for good.
 StartLimitIntervalSec=0
 
