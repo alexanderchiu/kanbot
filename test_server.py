@@ -1,4 +1,5 @@
 import json
+import os
 import sqlite3
 import tempfile
 import threading
@@ -8,7 +9,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from server import make_server
+from server import backup_database, make_server
 
 
 class ApiTest(unittest.TestCase):
@@ -230,6 +231,54 @@ class StartupTest(unittest.TestCase):
             finally:
                 first.server_close()
             self.assertFalse(second.exists())
+
+
+class BackupTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.db = Path(self.tmp.name) / "board.db"
+        self.backups = Path(self.tmp.name) / "backups"
+
+    def write(self, value):
+        conn = sqlite3.connect(self.db)
+        conn.execute("CREATE TABLE IF NOT EXISTS t (v)")
+        conn.execute("INSERT INTO t VALUES (?)", (value,))
+        conn.commit()
+        conn.close()
+
+    def test_no_database_means_no_backup(self):
+        self.assertIsNone(backup_database(self.db, self.backups))
+
+    def test_copies_data_and_skips_unchanged_database(self):
+        self.write("a")
+        target = backup_database(self.db, self.backups)
+        conn = sqlite3.connect(target)
+        self.assertEqual(conn.execute("SELECT v FROM t").fetchall(), [("a",)])
+        conn.close()
+        self.assertIsNone(backup_database(self.db, self.backups))
+        os.utime(self.db, (target.stat().st_mtime + 5,) * 2)
+        self.assertIsNotNone(backup_database(self.db, self.backups))
+
+    def test_keeps_only_newest_and_ignores_other_files(self):
+        self.write("a")
+        self.backups.mkdir()
+        (self.backups / "notes.txt").write_text("mine")
+        for day in (1, 2, 3):
+            (self.backups / f"board-2020010{day}-000000.db").touch()
+            os.utime(self.backups / f"board-2020010{day}-000000.db", (1, 1))
+        newest = backup_database(self.db, self.backups, keep=2)
+        names = sorted(path.name for path in self.backups.iterdir())
+        self.assertEqual(names, ["board-20200103-000000.db", newest.name, "notes.txt"])
+
+    def test_backup_is_taken_before_migrating(self):
+        self.write("a")
+        make_server(self.db, 0, self.backups).server_close()
+        [target] = self.backups.iterdir()
+        conn = sqlite3.connect(target)
+        tables = [row[0] for row in conn.execute("SELECT name FROM sqlite_master")]
+        conn.close()
+        self.assertEqual(tables, ["t"])
 
 
 class MigrationTest(unittest.TestCase):

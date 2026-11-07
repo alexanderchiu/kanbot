@@ -9,6 +9,10 @@ uv run server.py                  # http://127.0.0.1:8787
 uv run server.py --port 9000 --db /path/to/board.db
 ```
 
+## Backups
+
+Each time the server starts, it copies the database to `backups/` beside it, unless nothing has changed since the last copy. It keeps the newest 30. To restore one, stop the server and copy a backup over `kanban.db`.
+
 ## Use the board
 
 - Drag cards to move or reorder them. The board picks up agent changes within 3 seconds.

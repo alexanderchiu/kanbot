@@ -15,6 +15,7 @@ STATUSES = ("follow_up", "in_progress", "done", "cancelled")
 PRIORITIES = ("high", "medium", "low")
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
 MAX_BODY = 1024 * 1024
+BACKUPS_KEPT = 30
 TICKET_PATH = re.compile(r"^/api/tickets/(\d{1,18})$")
 
 TICKETS_TABLE = """
@@ -133,6 +134,31 @@ def migrate(db_path):
             conn.execute(
                 "INSERT INTO sqlite_sequence (name, seq) VALUES ('tickets', ?)", (counter["seq"],)
             )
+
+
+def backup_database(db_path, backup_dir, keep=BACKUPS_KEPT):
+    """Copy the database into backup_dir, unless it's unchanged since the last copy."""
+    db = Path(db_path)
+    if not db.exists():
+        return None
+    backup_dir = Path(backup_dir)
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    pattern = f"{db.stem}-*.db"
+    existing = sorted(backup_dir.glob(pattern))
+    if existing and existing[-1].stat().st_mtime >= db.stat().st_mtime:
+        return None
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    target = backup_dir / f"{db.stem}-{stamp}.db"
+    source, copy = connect(db), sqlite3.connect(target)
+    try:
+        source.backup(copy)
+    finally:
+        source.close()
+        copy.close()
+    for old in sorted(backup_dir.glob(pattern))[:-keep]:
+        old.unlink()
+    return target
 
 
 def normalize_project(value):
@@ -423,9 +449,12 @@ class Handler(BaseHTTPRequestHandler):
     do_GET = do_POST = do_PATCH = do_DELETE = handle_request
 
 
-def make_server(db_path, port):
+def make_server(db_path, port, backup_dir=None):
     # Bind first: if the port is taken, another server is using the database.
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    if backup_dir:
+        # Back up before migrating, so a bad upgrade can be undone.
+        backup_database(db_path, backup_dir)
     migrate(db_path)
     server.db_path = str(db_path)
     return server
@@ -435,8 +464,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8787)
     parser.add_argument("--db", default=str(HERE / "kanban.db"), help="SQLite database path")
+    parser.add_argument(
+        "--backup-dir", help="Where to keep backups (default: backups/ beside the database)"
+    )
     args = parser.parse_args()
-    server = make_server(args.db, args.port)
+    backup_dir = args.backup_dir or Path(args.db).resolve().parent / "backups"
+    server = make_server(args.db, args.port, backup_dir)
     print(f"Kanban running at http://127.0.0.1:{server.server_port} (db: {args.db})", flush=True)
     try:
         server.serve_forever()
