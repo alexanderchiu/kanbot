@@ -172,7 +172,7 @@
     min-height: 0;
     display: grid;
     grid-auto-flow: column;
-    grid-auto-columns: minmax(250px, 1fr);
+    grid-auto-columns: minmax(220px, 1fr);
     gap: 4px;
     padding: 0 12px;
     overflow-x: auto;
@@ -311,7 +311,7 @@
     transition: background var(--ease), border-color var(--ease);
   }
   .bare:hover { background: var(--raised); }
-  .bare:focus { background: var(--raised); border-color: var(--line-strong); outline: none; }
+  .bare:focus { background: var(--raised); border-color: var(--blue); outline: none; }
   .bare::placeholder { color: var(--text-3); }
   [name="title"] { font-size: 18px; font-weight: 600; line-height: 1.3; letter-spacing: -0.015em; }
   [name="description"] { min-height: 72px; margin-top: 4px; color: var(--text-2); line-height: 1.55; }
@@ -331,7 +331,7 @@
   }
   .property select { padding-right: 26px; }
   .property select:hover, .property input:hover:not([type="checkbox"]) { background-color: var(--raised); }
-  .property input:focus:not([type="checkbox"]) { background-color: var(--raised); border-color: var(--line-strong); outline: none; }
+  .property input:focus:not([type="checkbox"]) { background-color: var(--raised); border-color: var(--blue); outline: none; }
   .property input::placeholder { color: var(--text-3); }
   .switch {
     appearance: none;
@@ -387,20 +387,20 @@
 
   #activity { display: grid; gap: 10px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
   h3 { margin: 0; font-size: 13px; font-weight: 500; }
-  #notes { display: grid; gap: 8px; }
+  #notes { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
   #notes:empty::before { content: "No notes yet"; color: var(--text-3); }
   .note { padding: 8px 10px; background: var(--raised); border-radius: var(--radius-sm); }
-  .note-meta { color: var(--text-3); font-size: 12px; }
+  .note-meta { color: var(--text-3); font-size: 12px; overflow-wrap: anywhere; }
   .note-body { margin-top: 2px; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
   .composer { display: grid; gap: 6px; padding: 8px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-sm); }
-  .composer:focus-within { border-color: var(--line-strong); }
+  .composer:focus-within { border-color: var(--blue); }
   #note-input { width: 100%; min-height: 40px; padding: 0 2px; background: none; border: 0; outline: none; resize: none; field-sizing: content; }
   #note-input::placeholder { color: var(--text-3); }
   .composer-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; color: var(--text-3); font-size: 12px; }
   .composer .button { height: 26px; }
   summary { color: var(--text-2); font-weight: 500; cursor: pointer; }
   summary:hover { color: var(--text); }
-  #history { display: grid; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+  #history { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
   .history-change { display: block; color: var(--text-2); overflow-wrap: anywhere; }
 
   .panel-foot {
@@ -503,7 +503,7 @@
 <main id="stats-view" hidden aria-label="Statistics"></main>
 <div id="toast" role="status" hidden></div>
 
-<dialog id="dialog" aria-labelledby="dialog-title">
+<dialog id="dialog">
   <div class="panel-head">
     <h2 id="dialog-title"></h2>
     <button type="button" class="icon-button" id="close" aria-label="Close">
@@ -603,6 +603,7 @@ let pendingDependencies = [];
 let addedDependencies = new Set(); // What the user changed, applied to the fresh list on save.
 let removedDependencies = new Set();
 let editingGone = false;
+let opener = null; // Where focus returns when the panel closes.
 let toastTimer, confirmTimer;
 const dropLine = Object.assign(document.createElement("div"), { className: "drop-line" });
 
@@ -623,8 +624,18 @@ function icon(name, className) {
 // Only http and https match, so ticket text can't create a javascript: link.
 const URL_PATTERN = /https?:\/\/[^\s<>"']+/g;
 
+function trimUrl(url) {
+  const count = (char) => url.split(char).length - 1;
+  for (;;) {
+    const trimmed = url.replace(/[.,;:!?\]}]+$/, "");
+    if (trimmed !== url) url = trimmed;
+    else if (url.endsWith(")") && count(")") > count("(")) url = url.slice(0, -1);
+    else return url;
+  }
+}
+
 function urlsIn(text) {
-  return [...text.matchAll(URL_PATTERN)].map((match) => match[0].replace(/[.,;:!?)\]}]+$/, ""));
+  return [...text.matchAll(URL_PATTERN)].map((match) => trimUrl(match[0]));
 }
 
 function linkNode(url) {
@@ -818,7 +829,7 @@ function render() {
   const scroll = {};
   for (const column of board.children) scroll[column.dataset.status] = column.querySelector(".cards").scrollTop;
   const boardScroll = board.scrollLeft;
-  const focused = document.activeElement?.closest?.(".card")?.dataset.id;
+  const focused = focusTarget(document.activeElement);
 
   const columns = showCancelled.checked ? ALL_COLUMNS : COLUMNS;
   board.replaceChildren(
@@ -829,7 +840,23 @@ function render() {
 
   for (const column of board.children) column.querySelector(".cards").scrollTop = scroll[column.dataset.status] ?? 0;
   board.scrollLeft = boardScroll;
-  if (focused) board.querySelector(`.card[data-id="${focused}"] .title`)?.focus({ preventScroll: true });
+  if (focused) findFocusTarget(focused)?.focus({ preventScroll: true });
+}
+
+// Describes a focusable board element so it can be found again after a rebuild.
+const FOCUSABLE = "button, a[href]";
+function focusTarget(node) {
+  if (!node || !board.contains(node)) return null;
+  const card = node.closest(".card");
+  if (card) return { selector: `.card[data-id="${card.dataset.id}"]`, index: [...card.querySelectorAll(FOCUSABLE)].indexOf(node) };
+  const column = node.closest(".column");
+  if (column && node.matches(".add")) return { selector: `.column[data-status="${column.dataset.status}"] .add`, index: -1 };
+  return null;
+}
+
+function findFocusTarget({ selector, index }) {
+  const found = board.querySelector(selector);
+  return index < 0 ? found : found?.querySelectorAll(FOCUSABLE)[index];
 }
 
 function cardAfterPointer(cards, y) {
@@ -928,12 +955,23 @@ function renderDependencies() {
   $("blocks").replaceChildren(...blocks.map((id) => dependencyRow(id)));
 }
 
-function addDependency() {
+// A leading number wins; otherwise an exact title, then a unique partial title.
+function findDependency(text) {
+  const number = text.match(/^#?(\d+)/)?.[1];
+  if (number) return ticketById(Number(number));
+  const query = text.toLowerCase();
+  const exact = tickets.find((t) => t.title.toLowerCase() === query);
+  if (exact) return exact;
+  const partial = tickets.filter((t) => t.title.toLowerCase().includes(query));
+  return partial.length === 1 ? partial[0] : undefined;
+}
+
+function addDependency(announce = true) {
   const input = $("add-dependency");
-  const id = Number(input.value.trim().match(/^#?(\d+)/)?.[1]);
   if (!input.value.trim()) return;
-  if (!ticketById(id)) {
-    showError("Choose an existing ticket by number or from the list.");
+  const id = findDependency(input.value.trim())?.id;
+  if (!id) {
+    if (announce) showError("Choose an existing ticket by number, or by a title that matches only one.");
     return;
   }
   if (id === editing?.id) {
@@ -970,12 +1008,15 @@ function renderStamps(ticket) {
 }
 
 function openPanel(ticket, status = "follow_up") {
+  const trigger = focusTarget(document.activeElement);
+  opener = ticket ? { selector: `.card[data-id="${ticket.id}"]`, index: 0, status: ticket.status } : { ...trigger, status };
   editing = ticket;
   editingGone = false;
   addedDependencies = new Set();
   removedDependencies = new Set();
   warnedUnsaved = false;
   $("dialog-title").textContent = ticket ? `#${ticket.id}` : "New ticket";
+  dialog.setAttribute("aria-label", ticket ? `Ticket #${ticket.id}: ${ticket.title}` : "New ticket");
   form.elements.title.value = ticket?.title ?? "";
   form.elements.description.value = ticket?.description ?? "";
   renderDescriptionLinks();
@@ -1052,6 +1093,14 @@ function requestClose() {
   }
   dialog.close();
 }
+
+function restoreOpenerFocus() {
+  if (!opener || dialog.open) return;
+  const target = (opener.selector && findFocusTarget(opener)) || board.querySelector(`.column[data-status="${opener.status}"] .add`);
+  target?.focus({ preventScroll: true });
+}
+
+dialog.addEventListener("close", restoreOpenerFocus);
 
 async function loadActivity(id) {
   try {
@@ -1139,6 +1188,7 @@ form.addEventListener("submit", async (event) => {
     }
     dialog.close();
     await refresh(true);
+    restoreOpenerFocus();
   } catch (error) {
     showError(error.message);
   }
@@ -1161,12 +1211,19 @@ form.elements.title.addEventListener("keydown", (event) => {
   form.requestSubmit();
 });
 
-$("add-dependency").addEventListener("change", addDependency);
+$("add-dependency").addEventListener("change", () => addDependency(false));
 $("add-dependency").addEventListener("keydown", (event) => {
   if (event.key !== "Enter") return;
   event.preventDefault();
   addDependency();
 });
+
+// Any edit re-arms the unsaved-changes warning.
+const rearm = () => { warnedUnsaved = false; };
+for (const target of [form, $("note-input")]) {
+  target.addEventListener("input", rearm);
+  target.addEventListener("change", rearm);
+}
 
 $("add-note").addEventListener("click", addNote);
 $("note-input").addEventListener("keydown", (event) => {
@@ -1192,6 +1249,7 @@ $("delete").addEventListener("click", async () => {
     showToast(`Ticket #${editing.id} deleted`);
     dialog.close();
     await refresh(true);
+    restoreOpenerFocus();
   } catch (error) {
     showError(error.message);
   }
@@ -1220,11 +1278,12 @@ ideasOnly.addEventListener("change", () => {
 showCancelled.addEventListener("change", () => {
   saveSetting("kanban-show-cancelled", showCancelled.checked ? "1" : "");
   render();
+  if (showCancelled.checked) board.querySelector('[data-status="cancelled"]')?.scrollIntoView({ inline: "nearest", block: "nearest" });
 });
 
 document.addEventListener("keydown", (event) => {
   if (dialog.open || event.ctrlKey || event.metaKey || event.altKey) return;
-  if (event.target.closest("input, textarea, select")) return;
+  if (event.target.closest("textarea, select, input:not([type='checkbox'], [type='radio'], [type='button'], [type='submit'])")) return;
   if (event.key === "/") {
     event.preventDefault();
     $("search").focus();
