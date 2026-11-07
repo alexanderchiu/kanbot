@@ -259,6 +259,7 @@
   .priority.high rect { fill: var(--pink); }
   .idea { color: var(--purple); }
   .project, .assignee { overflow-wrap: anywhere; }
+  .creator { min-width: 0; overflow-wrap: anywhere; }
   .assignee { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); }
   .avatar {
     display: grid;
@@ -742,6 +743,11 @@ function renderCard(ticket) {
     notes.title = `${ticket.note_count} ${noun}`;
     notes.append(String(ticket.note_count));
     meta.append(notes);
+  }
+  if (ticket.created_by) {
+    const creator = el("span", "creator", `by ${ticket.created_by}`);
+    creator.title = `Created by ${ticket.created_by}`;
+    meta.append(creator);
   }
   const date = ticket.completed_at
     ? ["Completed", ticket.completed_at]
