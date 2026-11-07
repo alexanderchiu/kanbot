@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kanban</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%232f5fd0'/><rect x='3' y='3' width='2.6' height='10' fill='white'/><rect x='6.7' y='3' width='2.6' height='6' fill='white'/><rect x='10.4' y='3' width='2.6' height='8' fill='white'/></svg>">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f3f4f6;
+    --column: #e7e9ee;
+    --card: #ffffff;
+    --text: #1c2027;
+    --muted: #626a78;
+    --border: #d3d7df;
+    --accent: #2f5fd0;
+    --accent-text: #ffffff;
+    --danger: #b3261e;
+    --shadow: 0 1px 2px rgb(20 25 35 / 0.14);
+    --high-bg: #fbdcd9; --high-fg: #8c1d18;
+    --medium-bg: #fbeabc; --medium-fg: #6b4e00;
+    --low-bg: #e1e5eb; --low-fg: #454c59;
+    --chip-bg-l: 90%;
+    --chip-fg-l: 26%;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161b;
+      --column: #1d2027;
+      --card: #2a2e37;
+      --text: #e9ebf0;
+      --muted: #a0a7b4;
+      --border: #3c414d;
+      --accent: #7ea2f5;
+      --accent-text: #10131a;
+      --danger: #f2a49e;
+      --shadow: 0 1px 2px rgb(0 0 0 / 0.5);
+      --high-bg: #5c1f1b; --high-fg: #ffd5d1;
+      --medium-bg: #4e3c0a; --medium-fg: #fbe7ae;
+      --low-bg: #3c414d; --low-fg: #d5d9e1;
+      --chip-bg-l: 24%;
+      --chip-fg-l: 85%;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+    padding: 12px 16px;
+  }
+  h1 { margin: 0; font-size: 18px; font-weight: 650; }
+  .filter { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--muted); }
+  select, input, textarea {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+  }
+
+  #banner {
+    margin: 0 16px 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: var(--high-bg);
+    color: var(--high-fg);
+  }
+
+  main {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    padding: 0 16px 16px;
+  }
+  .column {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--column);
+    border-radius: 10px;
+  }
+  .column-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 8px 8px 14px;
+  }
+  h2 { margin: 0; font-size: 14px; font-weight: 650; }
+  .count { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .add {
+    margin-left: auto;
+    padding: 2px 10px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .add:hover { background: var(--border); color: var(--text); }
+  .cards {
+    flex: 1;
+    min-height: 64px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 2px 8px 10px;
+  }
+  .empty { margin: 8px 6px; color: var(--muted); }
+  .card {
+    flex: none;
+    display: block;
+    width: 100%;
+    padding: 10px 12px;
+    text-align: left;
+    background: var(--card);
+    border: 1px solid transparent;
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    cursor: grab;
+  }
+  .card:hover { border-color: var(--border); }
+  .card.dragging { opacity: 0.45; }
+  .drop-line { flex: none; height: 3px; margin: -2px 0; border-radius: 2px; background: var(--accent); }
+  .title { display: block; font-weight: 550; overflow-wrap: anywhere; }
+  .snippet {
+    display: -webkit-box;
+    margin-top: 2px;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+  .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; }
+  .pill { padding: 1px 7px; border-radius: 999px; font-weight: 550; overflow-wrap: anywhere; }
+  .high { background: var(--high-bg); color: var(--high-fg); }
+  .medium { background: var(--medium-bg); color: var(--medium-fg); }
+  .low { background: var(--low-bg); color: var(--low-fg); }
+  .project {
+    border-radius: 4px;
+    background: hsl(var(--hue) 60% var(--chip-bg-l));
+    color: hsl(var(--hue) 70% var(--chip-fg-l));
+  }
+  .id { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  dialog {
+    width: min(560px, calc(100vw - 32px));
+    padding: 20px;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  dialog::backdrop { background: rgb(10 12 18 / 0.5); }
+  dialog h2 { margin-bottom: 14px; font-size: 16px; }
+  form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; min-width: 0; }
+  label input, label select, label textarea { width: 100%; color: var(--text); font-size: 14px; }
+  .wide { grid-column: 1 / -1; }
+  textarea { min-height: 140px; resize: vertical; }
+  #error { color: var(--danger); }
+  #stamps { color: var(--muted); font-size: 12px; }
+  .actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .actions button {
+    padding: 7px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--card);
+    cursor: pointer;
+  }
+  .actions .primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .actions .delete { margin-right: auto; color: var(--danger); }
+
+  @media (max-width: 800px) {
+    html, body { height: auto; }
+    main { grid-template-columns: minmax(0, 1fr); }
+    .cards { overflow-y: visible; }
+    form { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Kanban</h1>
+  <label class="filter">Project
+    <select id="filter"></select>
+  </label>
+</header>
+<div id="banner" role="alert" hidden>Can't reach the kanban server. Retrying…</div>
+<main id="board"></main>
+
+<dialog id="dialog">
+  <h2 id="dialog-title"></h2>
+  <form id="form" method="dialog">
+    <label class="wide">Title
+      <input name="title" required maxlength="500" autocomplete="off">
+    </label>
+    <label class="wide">Description
+      <textarea name="description"></textarea>
+    </label>
+    <label>Status
+      <select name="status"></select>
+    </label>
+    <label>Priority
+      <select name="priority"></select>
+    </label>
+    <label>Project
+      <input name="project" list="project-list" autocomplete="off">
+      <datalist id="project-list"></datalist>
+    </label>
+    <div id="error" class="wide" role="alert" hidden></div>
+    <div id="stamps" class="wide" hidden></div>
+    <div class="actions wide">
+      <button type="button" class="delete" id="delete">Delete</button>
+      <button type="button" id="cancel">Cancel</button>
+      <button type="submit" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const COLUMNS = [
+  { status: "follow_up", label: "Follow-up" },
+  { status: "in_progress", label: "In progress" },
+  { status: "done", label: "Done" },
+];
+const PRIORITIES = [
+  { value: "high", label: "High" },
+  { value: "medium", label: "Medium" },
+  { value: "low", label: "Low" },
+];
+const POLL_MS = 3000;
+
+const $ = (id) => document.getElementById(id);
+const board = $("board"), filter = $("filter"), dialog = $("dialog"), form = $("form");
+
+let tickets = [];
+let lastPayload = null;
+let draggingId = null;
+let editing = null; // The ticket open in the dialog; null when creating one.
+const dropLine = Object.assign(document.createElement("div"), { className: "drop-line" });
+
+// All ticket text comes from agents, so it is only ever inserted as text nodes.
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function hue(name) {
+  let hash = 0;
+  for (const ch of name) hash = (hash * 31 + ch.codePointAt(0)) % 360;
+  return hash;
+}
+
+async function api(method, path, body) {
+  const response = await fetch(path, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
+  return data;
+}
+
+function savedFilter() {
+  try { return localStorage.getItem("kanban-project") || ""; } catch { return ""; }
+}
+
+function saveFilter(value) {
+  try { localStorage.setItem("kanban-project", value); } catch {}
+}
+
+function renderFilter() {
+  const projects = [...new Set(tickets.map((t) => t.project).filter(Boolean))].sort();
+  const current = filter.value || savedFilter();
+  const options = current && !projects.includes(current) ? [...projects, current].sort() : projects;
+
+  filter.replaceChildren(new Option("All projects", ""), ...options.map((p) => new Option(p, p)));
+  filter.value = current;
+  $("project-list").replaceChildren(...projects.map((p) => new Option(p, p)));
+}
+
+function renderCard(ticket) {
+  const card = el("button", "card");
+  card.type = "button";
+  card.draggable = true;
+  card.dataset.id = ticket.id;
+  card.append(el("span", "title", ticket.title));
+  if (ticket.description) card.append(el("span", "snippet", ticket.description));
+
+  const meta = el("span", "meta");
+  meta.append(el("span", `pill ${ticket.priority}`, PRIORITIES.find((p) => p.value === ticket.priority).label));
+  if (ticket.project) {
+    const chip = el("span", "pill project", ticket.project);
+    chip.style.setProperty("--hue", hue(ticket.project));
+    meta.append(chip);
+  }
+  meta.append(el("span", "id", `#${ticket.id}`));
+  card.append(meta);
+
+  card.addEventListener("click", () => openDialog(ticket));
+  card.addEventListener("dragstart", (event) => {
+    draggingId = ticket.id;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(ticket.id));
+    requestAnimationFrame(() => card.classList.add("dragging"));
+  });
+  card.addEventListener("dragend", () => {
+    draggingId = null;
+    dropLine.remove();
+    refresh(true);
+  });
+  return card;
+}
+
+function renderColumn({ status, label }, visible) {
+  const column = el("section", "column");
+  const head = el("div", "column-head");
+  const add = el("button", "add", "+ Add");
+  add.type = "button";
+  add.setAttribute("aria-label", `Add ticket to ${label}`);
+  add.addEventListener("click", () => openDialog(null, status));
+  head.append(el("h2", "", label), el("span", "count", visible.length), add);
+
+  const cards = el("div", "cards");
+  if (visible.length) cards.append(...visible.map(renderCard));
+  else cards.append(el("p", "empty", "No tickets"));
+
+  cards.addEventListener("dragover", (event) => {
+    if (draggingId === null) return;
+    event.preventDefault();
+    cards.insertBefore(dropLine, cardAfterPointer(cards, event.clientY));
+  });
+  cards.addEventListener("drop", (event) => {
+    if (draggingId === null) return;
+    event.preventDefault();
+    drop(status, cards, draggingId);
+  });
+
+  column.append(head, cards);
+  return column;
+}
+
+function render() {
+  renderFilter();
+  const visible = tickets.filter((t) => !filter.value || t.project === filter.value);
+  board.replaceChildren(
+    ...COLUMNS.map((column) =>
+      renderColumn(column, visible.filter((t) => t.status === column.status))
+    )
+  );
+}
+
+function cardAfterPointer(cards, y) {
+  for (const card of cards.querySelectorAll(".card:not(.dragging)")) {
+    const box = card.getBoundingClientRect();
+    if (y < box.top + box.height / 2) return card;
+  }
+  return null;
+}
+
+// Positions index the whole column, which can hold tickets hidden by the project filter.
+async function drop(status, cards, id) {
+  const column = tickets.filter((t) => t.status === status && t.id !== id);
+  const indexOf = (card) => column.findIndex((t) => t.id === Number(card.dataset.id));
+  const next = dropLine.nextElementSibling;
+  let position = column.length;
+  if (next?.classList.contains("card") && !next.classList.contains("dragging")) {
+    position = indexOf(next);
+  } else {
+    const before = [...cards.querySelectorAll(".card:not(.dragging)")].at(-1);
+    if (before) position = indexOf(before) + 1;
+  }
+  dropLine.remove();
+  try {
+    await api("PATCH", `/api/tickets/${id}`, { status, position });
+  } catch (error) {
+    alert(error.message);
+  }
+  await refresh(true);
+}
+
+function openDialog(ticket, status = "follow_up") {
+  editing = ticket;
+  $("dialog-title").textContent = ticket ? `Edit ticket #${ticket.id}` : "New ticket";
+  form.elements.title.value = ticket?.title ?? "";
+  form.elements.description.value = ticket?.description ?? "";
+  form.elements.status.value = ticket?.status ?? status;
+  form.elements.priority.value = ticket?.priority ?? "medium";
+  form.elements.project.value = ticket ? ticket.project ?? "" : filter.value;
+  $("delete").hidden = !ticket;
+  $("error").hidden = true;
+  $("stamps").hidden = !ticket;
+  if (ticket) {
+    const when = (iso) => new Date(iso).toLocaleString();
+    $("stamps").textContent = `Created ${when(ticket.created_at)} · Updated ${when(ticket.updated_at)}`;
+  }
+  dialog.showModal();
+  form.elements.title.focus();
+}
+
+function showError(message) {
+  $("error").textContent = message;
+  $("error").hidden = false;
+}
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const values = {
+    title: form.elements.title.value,
+    description: form.elements.description.value,
+    status: form.elements.status.value,
+    priority: form.elements.priority.value,
+    project: form.elements.project.value.trim().toLowerCase() || null,
+  };
+  try {
+    if (editing) {
+      // Send only what changed, so saving can't undo an agent's concurrent edit.
+      const changes = Object.fromEntries(
+        Object.entries(values).filter(([key, value]) => value !== editing[key])
+      );
+      if (Object.keys(changes).length) await api("PATCH", `/api/tickets/${editing.id}`, changes);
+    } else {
+      await api("POST", "/api/tickets", values);
+    }
+    dialog.close();
+    await refresh(true);
+  } catch (error) {
+    showError(error.message);
+  }
+});
+
+$("cancel").addEventListener("click", () => dialog.close());
+
+$("delete").addEventListener("click", async () => {
+  if (!confirm(`Delete ticket #${editing.id}? This can't be undone.`)) return;
+  try {
+    await api("DELETE", `/api/tickets/${editing.id}`);
+    dialog.close();
+    await refresh(true);
+  } catch (error) {
+    showError(error.message);
+  }
+});
+
+filter.addEventListener("change", () => {
+  saveFilter(filter.value);
+  render();
+});
+
+async function refresh(force = false) {
+  try {
+    const response = await fetch("/api/tickets");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.text();
+    $("banner").hidden = true;
+    // Don't rebuild the board under a drag or when nothing has changed.
+    if (draggingId !== null || (!force && payload === lastPayload)) return;
+    lastPayload = payload;
+    tickets = JSON.parse(payload);
+    render();
+  } catch {
+    $("banner").hidden = false;
+  }
+}
+
+form.elements.status.append(...COLUMNS.map((c) => new Option(c.label, c.status)));
+form.elements.priority.append(...PRIORITIES.map((p) => new Option(p.label, p.value)));
+refresh(true);
+setInterval(refresh, POLL_MS);
+</script>
+</body>
+</html>
