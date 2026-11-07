@@ -20,6 +20,7 @@
     --yellow: #e6db74;
     --green: #a6e22e;
     --blue: #66d9ef;
+    --purple: #ae81ff;
     --on-color: #1e1f1c;
     --shadow: 0 1px 2px rgb(0 0 0 / 0.5);
   }
@@ -45,6 +46,7 @@
   }
   h1 { margin: 0 auto 0 0; font-size: 18px; font-weight: 650; color: var(--pink); }
   .filter { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+  input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--purple); }
   select, input, textarea {
     background: var(--field);
     border: 1px solid var(--border);
@@ -138,6 +140,7 @@
   .high { background: var(--pink); color: var(--on-color); }
   .medium { background: var(--yellow); color: var(--on-color); }
   .low { background: var(--border); color: var(--text); }
+  .idea { background: var(--purple); color: var(--on-color); }
   .project {
     padding: 0 6px;
     border: 1px solid var(--chip);
@@ -160,6 +163,8 @@
   label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; min-width: 0; }
   label input, label select, label textarea { width: 100%; color: var(--text); font-size: 14px; }
   .wide { grid-column: 1 / -1; }
+  label.check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
+  label.check input { width: 16px; }
   textarea { min-height: 140px; resize: vertical; }
   #error { color: var(--pink); }
   #stamps { color: var(--muted); font-size: 12px; }
@@ -185,6 +190,7 @@
 <body>
 <header>
   <h1>Kanban</h1>
+  <label class="filter" id="ideas-filter"><input type="checkbox" id="ideas-only"> Ideas only</label>
   <label class="filter">Project
     <select id="filter"></select>
   </label>
@@ -211,6 +217,7 @@
       <input name="project" list="project-list" autocomplete="off">
       <datalist id="project-list"></datalist>
     </label>
+    <label class="check wide"><input type="checkbox" name="idea"> This ticket is an idea</label>
     <div id="error" class="wide" role="alert" hidden></div>
     <div id="stamps" class="wide" hidden></div>
     <div class="actions wide">
@@ -236,7 +243,7 @@ const PROJECT_COLORS = ["var(--green)", "var(--blue)", "var(--yellow)", "var(--o
 const POLL_MS = 3000;
 
 const $ = (id) => document.getElementById(id);
-const board = $("board"), filter = $("filter"), dialog = $("dialog"), form = $("form");
+const board = $("board"), filter = $("filter"), ideasOnly = $("ideas-only"), dialog = $("dialog"), form = $("form");
 
 let tickets = [];
 let lastPayload = null;
@@ -269,17 +276,17 @@ async function api(method, path, body) {
   return data;
 }
 
-function savedFilter() {
-  try { return localStorage.getItem("kanban-project") || ""; } catch { return ""; }
+function loadSetting(key) {
+  try { return localStorage.getItem(key) || ""; } catch { return ""; }
 }
 
-function saveFilter(value) {
-  try { localStorage.setItem("kanban-project", value); } catch {}
+function saveSetting(key, value) {
+  try { localStorage.setItem(key, value); } catch {}
 }
 
 function renderFilter() {
   const projects = [...new Set(tickets.map((t) => t.project).filter(Boolean))].sort();
-  const current = filter.value || savedFilter();
+  const current = filter.value || loadSetting("kanban-project");
   const options = current && !projects.includes(current) ? [...projects, current].sort() : projects;
 
   filter.replaceChildren(new Option("All projects", ""), ...options.map((p) => new Option(p, p)));
@@ -297,6 +304,7 @@ function renderCard(ticket) {
 
   const meta = el("span", "meta");
   meta.append(el("span", `pill ${ticket.priority}`, PRIORITIES.find((p) => p.value === ticket.priority).label));
+  if (ticket.idea) meta.append(el("span", "pill idea", "Idea"));
   if (ticket.project) {
     const chip = el("span", "pill project", ticket.project);
     chip.style.setProperty("--chip", projectColor(ticket.project));
@@ -350,7 +358,9 @@ function renderColumn({ status, label }, visible) {
 
 function render() {
   renderFilter();
-  const visible = tickets.filter((t) => !filter.value || t.project === filter.value);
+  const visible = tickets.filter(
+    (t) => (!filter.value || t.project === filter.value) && (!ideasOnly.checked || t.idea)
+  );
   board.replaceChildren(
     ...COLUMNS.map((column) =>
       renderColumn(column, visible.filter((t) => t.status === column.status))
@@ -366,7 +376,7 @@ function cardAfterPointer(cards, y) {
   return null;
 }
 
-// Positions index the whole column, which can hold tickets hidden by the project filter.
+// Positions index the whole column, which can hold tickets hidden by the filters.
 async function drop(status, cards, id) {
   const column = tickets.filter((t) => t.status === status && t.id !== id);
   const indexOf = (card) => column.findIndex((t) => t.id === Number(card.dataset.id));
@@ -395,6 +405,7 @@ function openDialog(ticket, status = "follow_up") {
   form.elements.status.value = ticket?.status ?? status;
   form.elements.priority.value = ticket?.priority ?? "medium";
   form.elements.project.value = ticket ? ticket.project ?? "" : filter.value;
+  form.elements.idea.checked = ticket ? ticket.idea : ideasOnly.checked;
   $("delete").hidden = !ticket;
   $("error").hidden = true;
   $("stamps").hidden = !ticket;
@@ -419,6 +430,7 @@ form.addEventListener("submit", async (event) => {
     status: form.elements.status.value,
     priority: form.elements.priority.value,
     project: form.elements.project.value.trim().toLowerCase() || null,
+    idea: form.elements.idea.checked,
   };
   try {
     if (editing) {
@@ -451,7 +463,12 @@ $("delete").addEventListener("click", async () => {
 });
 
 filter.addEventListener("change", () => {
-  saveFilter(filter.value);
+  saveSetting("kanban-project", filter.value);
+  render();
+});
+
+ideasOnly.addEventListener("change", () => {
+  saveSetting("kanban-ideas-only", ideasOnly.checked ? "1" : "");
   render();
 });
 
@@ -473,6 +490,7 @@ async function refresh(force = false) {
 
 form.elements.status.append(...COLUMNS.map((c) => new Option(c.label, c.status)));
 form.elements.priority.append(...PRIORITIES.map((p) => new Option(p.label, p.value)));
+ideasOnly.checked = loadSetting("kanban-ideas-only") === "1";
 refresh(true);
 setInterval(refresh, POLL_MS);
 </script>
