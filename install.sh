@@ -12,8 +12,8 @@ for tool in uv systemctl curl; do
 done
 uv=$(command -v uv)
 
-# Escape the paths for use as sed replacements.
-escape() { printf '%s' "$1" | sed 's/[&|\]/\\&/g'; }
+# Escape the paths for sed, and % for systemd.
+escape() { printf '%s' "$1" | sed 's/[&|\]/\\&/g; s/%/%%/g'; }
 
 mkdir -p "$unit_dir"
 sed -e "s|@REPO@|$(escape "$repo")|" -e "s|@UV@|$(escape "$uv")|" \

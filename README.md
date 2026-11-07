@@ -37,7 +37,7 @@ Each time the server starts, it copies the database to `backups/` beside it, unl
 - Cards show the date a ticket was created, or completed once it's done. Open a card to see the exact times.
 - Links in descriptions and notes are clickable.
 - Click a card to edit, cancel or delete it. Cancelled tickets stay on record and are hidden until you turn on the **Cancelled** toggle. To reopen one, change its status.
-- Use **+ Add** on a column to create a ticket.
+- Use **New ticket** or the **+** button on a column to create a ticket.
 - Use the search box to find tickets by number, text, project, assignee or creator.
 - Use the **Project** menu to filter the board by project, or use the **Ideas** toggle to see just ideas.
 
@@ -66,7 +66,7 @@ Tickets also return these read-only fields:
 - `updated_at`: when the ticket last changed, in UTC.
 - `completed_at`: when the ticket moved to `done`, in UTC. It's cleared if the ticket leaves `done`, and is `null` for every other status.
 
-If you don't set `position`, a ticket goes after the last ticket of equal or higher priority in its column. Setting `position` or dragging a card overrides this.
+If you don't set `position`, a ticket goes before the first ticket of lower priority in its column, or at the end if there is none. Setting `position` or dragging a card overrides this.
 
 ## API
 
@@ -82,11 +82,11 @@ If you don't set `position`, a ticket goes after the last ticket of equal or hig
 | `DELETE /api/tickets/{id}` | Delete a ticket permanently |
 | `GET /api/projects` | List project tags with ticket counts |
 
-Use `ready=true` to list follow-up tickets with nothing left to wait for. Circular dependencies are rejected, and a dependency doesn't move or lock a ticket: it only shows what the ticket is waiting on.
+An empty `project` or `assignee` filter lists tickets without one, so `assignee=` finds unassigned work. Use `ready=true` to list follow-up tickets with nothing left to wait for. Circular dependencies are rejected, and a dependency doesn't move or lock a ticket: it only shows what the ticket is waiting on.
 
 Every change to a ticket's fields is recorded in its history, except reordering. History starts from when this feature was added, and deleting a ticket deletes its history.
 
-Errors return a 4xx or 5xx status with `{"error": "message"}`.
+API errors return a 4xx or 5xx status with `{"error": "message"}`.
 
 ## Instructions for agents
 

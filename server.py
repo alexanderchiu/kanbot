@@ -16,6 +16,7 @@ PRIORITIES = ("high", "medium", "low")
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
 MAX_BODY = 1024 * 1024
 BACKUPS_KEPT = 30
+MAX_ID = 2**63 - 1
 TICKET_PATH = re.compile(r"^/api/tickets/(\d{1,18})$")
 CLAIM_PATH = re.compile(r"^/api/tickets/(\d{1,18})/claim$")
 NOTES_PATH = re.compile(r"^/api/tickets/(\d{1,18})/notes$")
@@ -279,7 +280,9 @@ def validate(body, creating):
         fields["idea"] = body["idea"]
     if "depends_on" in body:
         value = body["depends_on"]
-        if not isinstance(value, list) or any(type(item) is not int for item in value):
+        if not isinstance(value, list) or any(
+            type(item) is not int or not 0 <= item <= MAX_ID for item in value
+        ):
             raise ApiError(400, "depends_on must be a list of ticket IDs.")
         fields["depends_on"] = sorted(set(value))
     if "position" in body:
@@ -293,8 +296,8 @@ def validate(body, creating):
 def place(conn, ticket_id, status, priority, position=None):
     """Put a ticket in its column and renumber that column.
 
-    With no explicit position, the ticket goes after the last ticket of equal or
-    higher priority, so urgent work surfaces while manual ordering is respected.
+    With no explicit position, the ticket goes before the first ticket of lower
+    priority, so urgent work surfaces while manual ordering is respected.
     """
     others = conn.execute(
         "SELECT id, priority FROM tickets WHERE status = ? AND id != ? ORDER BY position, id",
@@ -527,7 +530,9 @@ def delete_ticket(db_path, ticket_id):
 
 
 def list_tickets(db_path, query):
-    params = {key: values[-1] for key, values in parse_qs(query).items()}
+    params = {
+        key: values[-1] for key, values in parse_qs(query, keep_blank_values=True).items()
+    }
     unknown = set(params) - {"status", "project", "priority", "idea", "assignee", "created_by", "q", "ready"}
     if unknown:
         raise ApiError(400, f"Unknown query parameters: {', '.join(sorted(unknown))}.")
@@ -642,10 +647,15 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", 0))
         except ValueError:
             raise ApiError(400, "Invalid Content-Length.")
+        if length < 0:
+            raise ApiError(400, "Invalid Content-Length.")
         if length > MAX_BODY:
             raise ApiError(413, "Request body too large.")
         try:
-            return json.loads(self.rfile.read(length))
+            body = json.loads(self.rfile.read(length))
+            # JSON can carry lone surrogates, which SQLite can't store.
+            json.dumps(body, ensure_ascii=False).encode()
+            return body
         except ValueError:
             raise ApiError(400, "Request body must be valid JSON.")
 
@@ -696,12 +706,17 @@ class Handler(BaseHTTPRequestHandler):
             self.log_error("%s %s failed: %r", self.command, self.path, error)
             self.send_json(500, {"error": f"Internal error: {error}"})
 
-    do_GET = do_POST = do_PATCH = do_DELETE = handle_request
+    do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = handle_request
+
+
+class Server(ThreadingHTTPServer):
+    # The default queue of 5 drops connections when many agents call at once.
+    request_queue_size = 128
 
 
 def make_server(db_path, port, backup_dir=None):
     # Bind first: if the port is taken, another server is using the database.
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server = Server(("127.0.0.1", port), Handler)
     if backup_dir:
         # Back up before migrating, so a bad upgrade can be undone. A migration always
         # gets a fresh copy, because a restored file's old mtime can look unchanged.

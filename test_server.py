@@ -1,3 +1,4 @@
+import http.client
 import json
 import os
 import sqlite3
@@ -342,6 +343,37 @@ class ApiTest(unittest.TestCase):
         self.call("DELETE", f"/api/tickets/{first}")
         _, detail = self.call("GET", f"/api/tickets/{second['id']}")
         self.assertEqual((detail["depends_on"], detail["blocked_by"]), ([], []))
+
+    def test_empty_filters(self):
+        self.create(title="tagged", project="web", assignee="alex")
+        self.create(title="untagged")
+
+        def titles(query):
+            return [t["title"] for t in self.call("GET", f"/api/tickets?{query}")[1]]
+
+        self.assertEqual(titles("assignee="), ["untagged"])
+        self.assertEqual(titles("project="), ["untagged"])
+        self.assertEqual(len(titles("q=")), 2)
+        self.assertEqual(self.call("GET", "/api/tickets?status=")[0], 400)
+
+    def test_values_that_cannot_be_stored_are_rejected(self):
+        for body in ({"title": "x", "depends_on": [2**70]}, {"title": "x", "depends_on": [-1]}):
+            self.assertEqual(self.call("POST", "/api/tickets", body)[0], 400)
+        raw = b'{"title": "\\ud800"}'
+        self.assertEqual(self.call("POST", "/api/tickets", raw=raw)[0], 400)
+
+    def test_negative_content_length_is_rejected(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=5)
+        connection.putrequest("POST", "/api/tickets")
+        connection.putheader("Content-Length", "-1")
+        connection.endheaders()
+        self.assertEqual(connection.getresponse().status, 400)
+        connection.close()
+
+    def test_unsupported_method_returns_json_error(self):
+        status, payload = self.call("PUT", "/api/tickets", {"title": "x"})
+        self.assertEqual(status, 404)
+        self.assertIn("error", payload)
 
     def test_delete(self):
         ticket = self.create()
