@@ -4,8 +4,8 @@ Description=Local kanban board
 StartLimitIntervalSec=0
 
 [Service]
-WorkingDirectory=/mnt/data/workspace/kanban
-ExecStart=/usr/bin/uv run --quiet server.py
+WorkingDirectory=@REPO@
+ExecStart=@UV@ run --quiet server.py
 Restart=on-failure
 RestartSec=10
 
