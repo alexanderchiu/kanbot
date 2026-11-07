@@ -300,6 +300,10 @@ function renderFilter() {
   $("project-list").replaceChildren(...projects.map((p) => new Option(p, p)));
 }
 
+function shortDate(iso) {
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 function renderCard(ticket) {
   const card = el("button", "card");
   card.type = "button";
@@ -316,7 +320,10 @@ function renderCard(ticket) {
     chip.style.setProperty("--chip", projectColor(ticket.project));
     meta.append(chip);
   }
-  meta.append(el("span", "id", `#${ticket.id}`));
+  const date = ticket.completed_at
+    ? `Completed ${shortDate(ticket.completed_at)}`
+    : `Created ${shortDate(ticket.created_at)}`;
+  meta.append(el("span", "id", `${date} · #${ticket.id}`));
   card.append(meta);
 
   card.addEventListener("click", () => openDialog(ticket));
@@ -425,7 +432,8 @@ function openDialog(ticket, status = "follow_up") {
   $("stamps").hidden = !ticket;
   if (ticket) {
     const when = (iso) => new Date(iso).toLocaleString();
-    $("stamps").textContent = `Created ${when(ticket.created_at)} · Updated ${when(ticket.updated_at)}`;
+    const completed = ticket.completed_at ? ` · Completed ${when(ticket.completed_at)}` : "";
+    $("stamps").textContent = `Created ${when(ticket.created_at)}${completed} · Updated ${when(ticket.updated_at)}`;
   }
   dialog.showModal();
   form.elements.title.focus();

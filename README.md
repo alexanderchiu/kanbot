@@ -12,6 +12,7 @@ uv run server.py --port 9000 --db /path/to/board.db
 ## Use the board
 
 - Drag cards to move or reorder them. The board picks up agent changes within 3 seconds.
+- Cards show the date a ticket was created, or completed once it's done. Open a card to see the exact times.
 - Click a card to edit, cancel or delete it. Cancelled tickets stay on record and are hidden until you tick **Show cancelled**. To reopen one, change its status.
 - Use **+ Add** on a column to create a ticket.
 - Use the **Project** menu to filter the board by project, or tick **Ideas only** to see just ideas.
@@ -28,7 +29,12 @@ uv run server.py --port 9000 --db /path/to/board.db
 | `idea` | `true` or `false`; tags the ticket as an idea | `false` |
 | `position` | Integer index within the column, from 0 | Placed by priority |
 
-Tickets also return `id`, `created_at` and `updated_at`.
+Tickets also return these read-only fields:
+
+- `id`
+- `created_at`: when the ticket was created, in UTC.
+- `updated_at`: when the ticket last changed, in UTC.
+- `completed_at`: when the ticket moved to `done`, in UTC. It's cleared if the ticket leaves `done`, and is `null` for every other status.
 
 If you don't set `position`, a ticket goes after the last ticket of equal or higher priority in its column. Setting `position` or dragging a card overrides this.
 
