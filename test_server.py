@@ -281,6 +281,68 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM history").fetchone(), (0,))
         conn.close()
 
+    def test_dependencies(self):
+        first = self.create(title="first")["id"]
+        second = self.create(title="second")["id"]
+        third = self.create(title="third", depends_on=[second, first, first])
+        self.assertEqual(third["depends_on"], [first, second])
+        self.assertEqual(third["blocked_by"], [first, second])
+        path = f"/api/tickets/{third['id']}"
+        self.assertEqual(self.call("GET", f"/api/tickets/{first}")[1]["blocks"], [third["id"]])
+
+        self.call("PATCH", f"/api/tickets/{first}", {"status": "done"})
+        self.assertEqual(self.call("GET", path)[1]["blocked_by"], [second])
+        self.call("PATCH", f"/api/tickets/{second}", {"status": "cancelled"})
+        self.assertEqual(self.call("GET", path)[1]["blocked_by"], [])
+        self.call("PATCH", f"/api/tickets/{second}", {"status": "follow_up"})
+
+        _, updated = self.call("PATCH", path, {"depends_on": [first], "actor": "alex"})
+        self.assertEqual(updated["depends_on"], [first])
+        _, detail = self.call("GET", path)
+        change = detail["history"][0]
+        self.assertEqual(
+            (change["actor"], change["field"], change["old_value"], change["new_value"]),
+            ("alex", "depends_on", f"#{first}, #{second}", f"#{first}"),
+        )
+        self.assertEqual(self.call("PATCH", path, {"depends_on": []})[1]["depends_on"], [])
+
+        for body in ({"depends_on": 1}, {"depends_on": ["1"]}, {"depends_on": [True]}, {"depends_on": [999]}):
+            self.assertEqual(self.call("PATCH", path, body)[0], 400, body)
+        self.assertEqual(self.call("PATCH", path, {"depends_on": [third["id"]]})[0], 400)
+        self.assertEqual(self.call("POST", "/api/tickets", {"title": "x", "depends_on": [999]})[0], 400)
+        self.assertEqual(len(self.call("GET", "/api/tickets")[1]), 3)
+
+    def test_rejects_circular_dependencies(self):
+        a = self.create(title="a")["id"]
+        b = self.create(title="b", depends_on=[a])["id"]
+        c = self.create(title="c", depends_on=[b])["id"]
+        status, error = self.call("PATCH", f"/api/tickets/{a}", {"depends_on": [c]})
+        self.assertEqual(status, 400)
+        self.assertIn("circular", error["error"])
+        self.assertEqual(self.call("GET", f"/api/tickets/{a}")[1]["depends_on"], [])
+        # A shared dependency isn't a cycle.
+        self.assertEqual(self.call("PATCH", f"/api/tickets/{c}", {"depends_on": [a, b]})[0], 200)
+
+    def test_ready_filter(self):
+        first = self.create(title="first")["id"]
+        self.create(title="waiting", depends_on=[first])
+        self.create(title="active", status="in_progress")
+
+        def titles(query):
+            return [t["title"] for t in self.call("GET", f"/api/tickets?{query}")[1]]
+
+        self.assertEqual(titles("ready=true"), ["first"])
+        self.call("PATCH", f"/api/tickets/{first}", {"status": "done"})
+        self.assertEqual(titles("ready=true"), ["waiting"])
+        self.assertEqual(self.call("GET", "/api/tickets?ready=maybe")[0], 400)
+
+    def test_deleting_a_ticket_removes_its_dependencies(self):
+        first = self.create(title="first")["id"]
+        second = self.create(title="second", depends_on=[first])
+        self.call("DELETE", f"/api/tickets/{first}")
+        _, detail = self.call("GET", f"/api/tickets/{second['id']}")
+        self.assertEqual((detail["depends_on"], detail["blocked_by"]), ([], []))
+
     def test_delete(self):
         ticket = self.create()
         path = f"/api/tickets/{ticket['id']}"
@@ -492,6 +554,7 @@ class MigrationTest(unittest.TestCase):
                         "id": 1, "title": "first", "description": "", "status": "in_progress",
                         "priority": "high", "project": "web", "idea": True, "position": 4,
                         "created_by": None, "assignee": None, "note_count": 0,
+                        "depends_on": [], "blocked_by": [], "blocks": [],
                         "created_at": "then", "updated_at": "later", "completed_at": None,
                     },
                 )

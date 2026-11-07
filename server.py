@@ -59,6 +59,14 @@ CREATE TABLE IF NOT EXISTS history (
     at        TEXT NOT NULL
 );
 """
+DEPENDENCIES_TABLE = """
+CREATE TABLE IF NOT EXISTS dependencies (
+    ticket_id  INTEGER NOT NULL,
+    depends_on INTEGER NOT NULL,
+    PRIMARY KEY (ticket_id, depends_on)
+);
+"""
+RESOLVED_STATUSES = ("done", "cancelled")
 HISTORY_FIELDS = ("title", "description", "status", "priority", "project", "idea", "assignee")
 
 SELECT_TICKET = (
@@ -81,12 +89,16 @@ API_DOCS = {
         "created_by": "string or null; who created the ticket, stored lowercase. "
         "Can only be set on create.",
         "assignee": "string or null; who is working on it, stored lowercase",
+        "depends_on": "list of ticket IDs that must finish first. PATCH replaces the "
+        "whole list. Circular dependencies are rejected.",
         "position": "integer >= 0; index within the column. If omitted, the ticket "
         "is placed by priority.",
     },
     "read_only_fields": {
         "id": "integer",
         "note_count": "integer",
+        "blocked_by": "IDs from depends_on that aren't done or cancelled yet",
+        "blocks": "IDs of tickets that depend on this one",
         "created_at": "UTC timestamp",
         "updated_at": "UTC timestamp",
         "completed_at": "UTC timestamp set when the ticket moves to done, "
@@ -95,7 +107,8 @@ API_DOCS = {
     "endpoints": {
         "GET /api/tickets": "List tickets in board order. Optional query parameters: "
         "status, project, priority, idea (true or false), assignee, created_by, q "
-        "(text search of title and description).",
+        "(text search of title and description), ready=true (follow-up tickets with "
+        "nothing left to wait for).",
         "POST /api/tickets": "Create a ticket. Returns it with status 201.",
         "GET /api/tickets/{id}": "Fetch one ticket, including its notes and its change "
         "history, newest change first.",
@@ -158,6 +171,7 @@ def migrate(db_path):
     with transaction(db_path) as conn:
         conn.execute(NOTES_TABLE)
         conn.execute("CREATE INDEX IF NOT EXISTS notes_ticket ON notes (ticket_id)")
+        conn.execute(DEPENDENCIES_TABLE)
         conn.execute(HISTORY_TABLE)
         conn.execute("CREATE INDEX IF NOT EXISTS history_ticket ON history (ticket_id)")
         row = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'tickets'").fetchone()
@@ -249,6 +263,11 @@ def validate(body, creating):
         if not isinstance(body["idea"], bool):
             raise ApiError(400, "idea must be true or false.")
         fields["idea"] = body["idea"]
+    if "depends_on" in body:
+        value = body["depends_on"]
+        if not isinstance(value, list) or any(type(item) is not int for item in value):
+            raise ApiError(400, "depends_on must be a list of ticket IDs.")
+        fields["depends_on"] = sorted(set(value))
     if "position" in body:
         value = body["position"]
         if type(value) is not int or value < 0:
@@ -287,11 +306,65 @@ def ticket_json(row):
     return {**dict(row), "idea": bool(row["idea"])}
 
 
+def attach_dependencies(conn, tickets):
+    """Add depends_on, blocked_by and blocks to each ticket."""
+    by_id = {ticket["id"]: ticket for ticket in tickets}
+    for ticket in tickets:
+        ticket.update(depends_on=[], blocked_by=[], blocks=[])
+    rows = conn.execute(
+        "SELECT d.ticket_id, d.depends_on, t.status FROM dependencies d"
+        " JOIN tickets t ON t.id = d.depends_on ORDER BY d.depends_on, d.ticket_id"
+    )
+    for row in rows:
+        if row["ticket_id"] in by_id:
+            by_id[row["ticket_id"]]["depends_on"].append(row["depends_on"])
+            if row["status"] not in RESOLVED_STATUSES:
+                by_id[row["ticket_id"]]["blocked_by"].append(row["depends_on"])
+        if row["depends_on"] in by_id:
+            by_id[row["depends_on"]]["blocks"].append(row["ticket_id"])
+
+
 def fetch_ticket(conn, ticket_id):
     row = conn.execute(f"{SELECT_TICKET} WHERE id = ?", (ticket_id,)).fetchone()
     if row is None:
         raise ApiError(404, f"Ticket {ticket_id} not found.")
-    return ticket_json(row)
+    ticket = ticket_json(row)
+    attach_dependencies(conn, [ticket])
+    return ticket
+
+
+def set_dependencies(conn, ticket_id, depends_on):
+    """Replace a ticket's dependencies, refusing any that would form a cycle."""
+    if ticket_id in depends_on:
+        raise ApiError(400, "A ticket can't depend on itself.")
+    for other in depends_on:
+        if not conn.execute("SELECT 1 FROM tickets WHERE id = ?", (other,)).fetchone():
+            raise ApiError(400, f"depends_on refers to ticket {other}, which doesn't exist.")
+
+    edges = {}
+    for row in conn.execute("SELECT ticket_id, depends_on FROM dependencies"):
+        edges.setdefault(row["ticket_id"], []).append(row["depends_on"])
+    for start in depends_on:
+        seen, stack = set(), [start]
+        while stack:
+            current = stack.pop()
+            if current == ticket_id:
+                raise ApiError(
+                    400, f"Ticket {ticket_id} can't depend on ticket {start}: that would be circular."
+                )
+            if current not in seen:
+                seen.add(current)
+                stack.extend(edges.get(current, []))
+
+    conn.execute("DELETE FROM dependencies WHERE ticket_id = ?", (ticket_id,))
+    conn.executemany(
+        "INSERT INTO dependencies (ticket_id, depends_on) VALUES (?, ?)",
+        [(ticket_id, other) for other in depends_on],
+    )
+
+
+def dependency_text(ids):
+    return ", ".join(f"#{other}" for other in ids) or None
 
 
 def record_history(conn, ticket_id, actor, field, old, new, at):
@@ -330,6 +403,7 @@ def create_ticket(db_path, body):
             ),
         ).lastrowid
         place(conn, ticket_id, status, priority, fields.get("position"))
+        set_dependencies(conn, ticket_id, fields.get("depends_on", []))
         record_history(conn, ticket_id, fields.get("created_by"), "created", None, None, stamp)
         return fetch_ticket(conn, ticket_id)
 
@@ -348,6 +422,7 @@ def update_ticket(db_path, ticket_id, body):
     with transaction(db_path) as conn:
         current = fetch_ticket(conn, ticket_id)
         position = fields.pop("position", None)
+        depends_on = fields.pop("depends_on", None)
         status = fields.get("status", current["status"])
         priority = fields.get("priority", current["priority"])
         moved = (
@@ -370,6 +445,17 @@ def update_ticket(db_path, ticket_id, body):
                 record_history(
                     conn, ticket_id, actor, name, current[name], fields[name], fields["updated_at"]
                 )
+        if depends_on is not None and depends_on != current["depends_on"]:
+            set_dependencies(conn, ticket_id, depends_on)
+            record_history(
+                conn,
+                ticket_id,
+                actor,
+                "depends_on",
+                dependency_text(current["depends_on"]),
+                dependency_text(depends_on),
+                fields["updated_at"],
+            )
         return fetch_ticket(conn, ticket_id)
 
 
@@ -419,13 +505,16 @@ def delete_ticket(db_path, ticket_id):
         fetch_ticket(conn, ticket_id)
         conn.execute("DELETE FROM notes WHERE ticket_id = ?", (ticket_id,))
         conn.execute("DELETE FROM history WHERE ticket_id = ?", (ticket_id,))
+        conn.execute(
+            "DELETE FROM dependencies WHERE ticket_id = ? OR depends_on = ?", (ticket_id, ticket_id)
+        )
         conn.execute("DELETE FROM tickets WHERE id = ?", (ticket_id,))
     return {"deleted": ticket_id}
 
 
 def list_tickets(db_path, query):
     params = {key: values[-1] for key, values in parse_qs(query).items()}
-    unknown = set(params) - {"status", "project", "priority", "idea", "assignee", "created_by", "q"}
+    unknown = set(params) - {"status", "project", "priority", "idea", "assignee", "created_by", "q", "ready"}
     if unknown:
         raise ApiError(400, f"Unknown query parameters: {', '.join(sorted(unknown))}.")
 
@@ -456,8 +545,14 @@ def list_tickets(db_path, query):
     conn = connect(db_path)
     try:
         rows = [ticket_json(row) for row in conn.execute(sql, args)]
+        attach_dependencies(conn, rows)
     finally:
         conn.close()
+    if "ready" in params:
+        if params["ready"] not in ("true", "false"):
+            raise ApiError(400, "ready must be true or false.")
+        wanted = params["ready"] == "true"
+        rows = [t for t in rows if (t["status"] == "follow_up" and not t["blocked_by"]) == wanted]
     rows.sort(key=lambda t: (STATUSES.index(t["status"]), t["position"], t["id"]))
     return rows
 

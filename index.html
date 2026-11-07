@@ -357,7 +357,31 @@
   }
   .switch:checked { background: var(--purple); }
   .switch:checked::after { transform: translateX(12px); }
-  #stamps { display: grid; gap: 2px; margin-top: 2px; }
+  .dependencies { display: grid; gap: 4px; margin-top: 16px; }
+  .dependencies h3 { margin-bottom: 2px; }
+  #blocks-section { margin-top: 10px; }
+  .links-list { display: grid; gap: 2px; }
+  .dependency { display: flex; align-items: center; gap: 2px; margin-left: -6px; border-radius: var(--radius-sm); }
+  .dependency:hover { background: var(--raised); }
+  .dependency-link {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    background: none;
+    border: 0;
+    border-radius: var(--radius-sm);
+    color: var(--text-2);
+    text-align: left;
+  }
+  .dependency-link::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--dot); }
+  .dependency-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #add-dependency { font-size: 13px; }
+  [list]::-webkit-calendar-picker-indicator { display: none !important; }
+  .waiting { color: var(--orange); }
+  #stamps { display: grid; gap: 2px; margin-top: 12px; }
   .stamp { display: grid; grid-template-columns: 100px minmax(0, 1fr); min-height: 24px; align-items: center; color: var(--text-3); }
   .stamp span:last-child { padding-left: 7px; color: var(--text-2); font-size: 12px; overflow-wrap: anywhere; }
 
@@ -465,6 +489,17 @@
         <label class="property">Assignee <input name="assignee" placeholder="Unassigned" autocomplete="off"></label>
         <label class="property">Idea <input type="checkbox" class="switch" name="idea"></label>
       </div>
+      <div class="dependencies">
+        <h3>Depends on</h3>
+        <div id="depends-on" class="links-list"></div>
+        <label class="sr-only" for="add-dependency">Add a dependency</label>
+        <input id="add-dependency" class="bare" list="ticket-list" placeholder="Add a dependency by number or title" autocomplete="off">
+        <datalist id="ticket-list"></datalist>
+        <div id="blocks-section" hidden>
+          <h3>Blocks</h3>
+          <div id="blocks" class="links-list"></div>
+        </div>
+      </div>
       <div id="stamps" hidden></div>
     </form>
     <section id="activity" hidden>
@@ -526,6 +561,7 @@ let draggingId = null;
 let editing = null; // The ticket open in the panel; null when creating one.
 let initialValues = null;
 let warnedUnsaved = false;
+let pendingDependencies = [];
 let toastTimer, confirmTimer;
 const dropLine = Object.assign(document.createElement("div"), { className: "drop-line" });
 
@@ -609,6 +645,7 @@ function renderFilter() {
   filter.replaceChildren(new Option("All projects", ""), ...options.map((p) => new Option(p, p)));
   filter.value = current;
   $("project-list").replaceChildren(...projects.map((p) => new Option(p, p)));
+  $("ticket-list").replaceChildren(...tickets.map((t) => new Option(`#${t.id} ${t.title}`)));
 }
 
 const shortDate = (iso) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -635,6 +672,11 @@ function renderCard(ticket) {
   bars.append(el("span", "sr-only", `${priority} priority`));
   meta.append(bars);
   if (ticket.idea) meta.append(el("span", "idea", "Idea"));
+  if (ticket.blocked_by.length) {
+    const waiting = el("span", "waiting", `Waiting on ${ticket.blocked_by.map((id) => `#${id}`).join(", ")}`);
+    waiting.title = ticket.blocked_by.map((id) => `#${id} ${ticketById(id)?.title ?? ""}`).join("\n");
+    meta.append(waiting);
+  }
   if (ticket.project) meta.append(el("span", "project", ticket.project));
   if (ticket.assignee) {
     const assignee = el("span", "assignee");
@@ -708,6 +750,10 @@ function renderColumn({ status, label }, visible) {
 
   column.append(head, cards);
   return column;
+}
+
+function ticketById(id) {
+  return tickets.find((t) => t.id === id);
 }
 
 function searchText(ticket) {
@@ -793,7 +839,69 @@ function formValues() {
     project: form.elements.project.value.trim().toLowerCase() || null,
     idea: form.elements.idea.checked,
     assignee: form.elements.assignee.value.trim().toLowerCase() || null,
+    depends_on: [...pendingDependencies].sort((a, b) => a - b),
   };
+}
+
+function dependencyRow(id, onRemove) {
+  const row = el("div", "dependency");
+  const other = ticketById(id);
+  const open = el("button", "dependency-link");
+  open.type = "button";
+  open.dataset.status = other?.status ?? "";
+  open.title = other ? `Open #${id}` : "";
+  open.append(el("span", "", other ? `#${id} ${other.title}` : `#${id}`));
+  open.addEventListener("click", () => {
+    if (!other) return;
+    if (isDirty()) {
+      showError("Save or discard your changes before opening another ticket.");
+      return;
+    }
+    dialog.close();
+    openPanel(other);
+  });
+  row.append(open);
+  if (onRemove) {
+    const remove = el("button", "icon-button");
+    remove.type = "button";
+    remove.textContent = "×";
+    remove.setAttribute("aria-label", `Remove dependency on #${id}`);
+    remove.addEventListener("click", onRemove);
+    row.append(remove);
+  }
+  return row;
+}
+
+function renderDependencies() {
+  $("depends-on").replaceChildren(
+    ...pendingDependencies.map((id) =>
+      dependencyRow(id, () => {
+        pendingDependencies = pendingDependencies.filter((other) => other !== id);
+        renderDependencies();
+      })
+    )
+  );
+  const blocks = editing?.blocks ?? [];
+  $("blocks-section").hidden = !blocks.length;
+  $("blocks").replaceChildren(...blocks.map((id) => dependencyRow(id)));
+}
+
+function addDependency() {
+  const input = $("add-dependency");
+  const id = Number(input.value.trim().match(/^#?(\d+)/)?.[1]);
+  if (!input.value.trim()) return;
+  if (!ticketById(id)) {
+    showError("Choose an existing ticket by number or from the list.");
+    return;
+  }
+  if (id === editing?.id) {
+    showError("A ticket can't depend on itself.");
+    return;
+  }
+  $("error").hidden = true;
+  if (!pendingDependencies.includes(id)) pendingDependencies.push(id);
+  input.value = "";
+  renderDependencies();
 }
 
 function isDirty() {
@@ -829,6 +937,9 @@ function openPanel(ticket, status = "follow_up") {
   form.elements.assignee.value = ticket?.assignee ?? "";
   form.elements.idea.checked = ticket ? ticket.idea : ideasOnly.checked;
   $("note-input").value = "";
+  $("add-dependency").value = "";
+  pendingDependencies = [...(ticket?.depends_on ?? [])];
+  renderDependencies();
   initialValues = formValues();
 
   disarmDelete();
@@ -870,7 +981,8 @@ function describeChange({ field, old_value, new_value }) {
   if (field === "created") return "Created the ticket";
   if (field === "description") return "Changed the description";
   const label = (value) => ALL_COLUMNS.find((c) => c.status === value)?.label ?? value ?? "none";
-  return `Changed ${field}: ${label(old_value)} → ${label(new_value)}`;
+  const name = field === "depends_on" ? "dependencies" : field;
+  return `Changed ${name}: ${label(old_value)} → ${label(new_value)}`;
 }
 
 function renderHistoryEntry(entry) {
@@ -922,7 +1034,9 @@ form.addEventListener("submit", async (event) => {
     if (editing) {
       // Send only what changed, so saving can't undo an agent's concurrent edit.
       const changes = Object.fromEntries(
-        Object.entries(values).filter(([key, value]) => value !== editing[key])
+        Object.entries(values).filter(
+          ([key, value]) => JSON.stringify(value) !== JSON.stringify(editing[key])
+        )
       );
       if (Object.keys(changes).length) {
         await api("PATCH", `/api/tickets/${editing.id}`, { ...changes, actor: "user" });
@@ -953,6 +1067,13 @@ form.elements.title.addEventListener("keydown", (event) => {
   if (event.key !== "Enter") return;
   event.preventDefault();
   form.requestSubmit();
+});
+
+$("add-dependency").addEventListener("change", addDependency);
+$("add-dependency").addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  addDependency();
 });
 
 $("add-note").addEventListener("click", addNote);

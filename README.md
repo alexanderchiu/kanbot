@@ -53,12 +53,15 @@ Each time the server starts, it copies the database to `backups/` beside it, unl
 | `idea` | `true` or `false`; tags the ticket as an idea | `false` |
 | `created_by` | String or `null`, stored lowercase; can only be set on create | `null` |
 | `assignee` | String or `null`, stored lowercase | `null` |
+| `depends_on` | List of ticket IDs that must finish first; `PATCH` replaces the whole list | `[]` |
 | `position` | Integer index within the column, from 0 | Placed by priority |
 
 Tickets also return these read-only fields:
 
 - `id`
 - `note_count`
+- `blocked_by`: IDs from `depends_on` that aren't `done` or `cancelled` yet.
+- `blocks`: IDs of tickets that depend on this one.
 - `created_at`: when the ticket was created, in UTC.
 - `updated_at`: when the ticket last changed, in UTC.
 - `completed_at`: when the ticket moved to `done`, in UTC. It's cleared if the ticket leaves `done`, and is `null` for every other status.
@@ -70,7 +73,7 @@ If you don't set `position`, a ticket goes after the last ticket of equal or hig
 | Request | Purpose |
 |---|---|
 | `GET /api` | API description, in JSON |
-| `GET /api/tickets` | List tickets in board order; filter with `status`, `project`, `priority`, `idea`, `assignee`, `created_by`, `q` |
+| `GET /api/tickets` | List tickets in board order; filter with `status`, `project`, `priority`, `idea`, `assignee`, `created_by`, `q`, `ready` |
 | `POST /api/tickets` | Create a ticket |
 | `GET /api/tickets/{id}` | Get a ticket, including its notes and change history |
 | `PATCH /api/tickets/{id}` | Change or move a ticket; add `"actor": "name"` to record who did it |
@@ -78,6 +81,8 @@ If you don't set `position`, a ticket goes after the last ticket of equal or hig
 | `POST /api/tickets/{id}/claim` | Take a ticket with `{"assignee": "name"}`; returns 409 if someone else holds it |
 | `DELETE /api/tickets/{id}` | Delete a ticket permanently |
 | `GET /api/projects` | List project tags with ticket counts |
+
+Use `ready=true` to list follow-up tickets with nothing left to wait for. Circular dependencies are rejected, and a dependency doesn't move or lock a ticket: it only shows what the ticket is waiting on.
 
 Every change to a ticket's fields is recorded in its history, except reordering. History starts from when this feature was added, and deleting a ticket deletes its history.
 
@@ -114,7 +119,7 @@ existing tag.
 - Dropping work that's no longer needed, which keeps the ticket on record:
   `curl -s -X PATCH http://127.0.0.1:8787/api/tickets/42 -d '{"status": "cancelled", "actor": "claude-code"}'`
 
-To see open work, query `status=follow_up` and `status=in_progress`. `GET /api` describes the full API.
+To find work to pick up, query `ready=true`. Add `"depends_on": [42]` when one ticket must wait for another. `GET /api` describes the full API.
 ````
 
 ## Test
