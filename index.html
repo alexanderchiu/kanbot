@@ -600,6 +600,9 @@ let editing = null; // The ticket open in the panel; null when creating one.
 let initialValues = null;
 let warnedUnsaved = false;
 let pendingDependencies = [];
+let addedDependencies = new Set(); // What the user changed, applied to the fresh list on save.
+let removedDependencies = new Set();
+let editingGone = false;
 let toastTimer, confirmTimer;
 const dropLine = Object.assign(document.createElement("div"), { className: "drop-line" });
 
@@ -915,6 +918,7 @@ function renderDependencies() {
     ...pendingDependencies.map((id) =>
       dependencyRow(id, () => {
         pendingDependencies = pendingDependencies.filter((other) => other !== id);
+        if (!addedDependencies.delete(id)) removedDependencies.add(id);
         renderDependencies();
       })
     )
@@ -937,7 +941,10 @@ function addDependency() {
     return;
   }
   $("error").hidden = true;
-  if (!pendingDependencies.includes(id)) pendingDependencies.push(id);
+  if (!pendingDependencies.includes(id)) {
+    pendingDependencies.push(id);
+    if (!removedDependencies.delete(id)) addedDependencies.add(id);
+  }
   input.value = "";
   renderDependencies();
 }
@@ -964,6 +971,9 @@ function renderStamps(ticket) {
 
 function openPanel(ticket, status = "follow_up") {
   editing = ticket;
+  editingGone = false;
+  addedDependencies = new Set();
+  removedDependencies = new Set();
   warnedUnsaved = false;
   $("dialog-title").textContent = ticket ? `#${ticket.id}` : "New ticket";
   form.elements.title.value = ticket?.title ?? "";
@@ -992,6 +1002,45 @@ function openPanel(ticket, status = "follow_up") {
   if (ticket) loadActivity(ticket.id);
   dialog.showModal();
   form.elements.title.focus();
+}
+
+// Fold a newer copy of the open ticket into the panel: untouched fields follow it, edited ones stay.
+function mergeOpenTicket() {
+  if (!editing || !dialog.open) return;
+  const fresh = ticketById(editing.id);
+  if (!fresh) {
+    editingGone = true;
+    showError("This ticket was deleted. Close the panel to discard your changes.");
+    return;
+  }
+  if (fresh.updated_at === editing.updated_at && fresh.note_count === editing.note_count) return;
+  const current = formValues();
+  const setters = {
+    title: (v) => { form.elements.title.value = v; },
+    description: (v) => { form.elements.description.value = v; renderDescriptionLinks(); },
+    status: (v) => { form.elements.status.value = v; },
+    priority: (v) => { form.elements.priority.value = v; },
+    project: (v) => { form.elements.project.value = v ?? ""; },
+    idea: (v) => { form.elements.idea.checked = v; },
+    assignee: (v) => { form.elements.assignee.value = v ?? ""; },
+  };
+  for (const [key, set] of Object.entries(setters)) {
+    if (JSON.stringify(current[key]) !== JSON.stringify(initialValues[key])) continue;
+    set(fresh[key]);
+    initialValues[key] = formValues()[key];
+  }
+  for (const id of addedDependencies) if (fresh.depends_on.includes(id)) addedDependencies.delete(id);
+  for (const id of removedDependencies) if (!fresh.depends_on.includes(id)) removedDependencies.delete(id);
+  pendingDependencies = [
+    ...fresh.depends_on.filter((id) => !removedDependencies.has(id)),
+    ...addedDependencies,
+  ];
+  initialValues.depends_on = [...fresh.depends_on].sort((a, b) => a - b);
+  editing = fresh;
+  $("cancel-ticket").hidden = fresh.status === CANCELLED.status;
+  renderDependencies();
+  renderStamps(fresh);
+  loadActivity(fresh.id);
 }
 
 // Closing with edits in progress takes a second attempt, so a stray click can't lose them.
@@ -1070,12 +1119,17 @@ form.addEventListener("submit", async (event) => {
   const values = formValues();
   try {
     if (editing) {
+      if (editingGone) {
+        showError("This ticket was deleted. Close the panel to discard your changes.");
+        return;
+      }
       // Send only what changed, so saving can't undo an agent's concurrent edit.
       const changes = Object.fromEntries(
         Object.entries(values).filter(
-          ([key, value]) => JSON.stringify(value) !== JSON.stringify(editing[key])
+          ([key, value]) => key !== "depends_on" && JSON.stringify(value) !== JSON.stringify(editing[key])
         )
       );
+      if (addedDependencies.size || removedDependencies.size) changes.depends_on = values.depends_on;
       if (Object.keys(changes).length) {
         await api("PATCH", `/api/tickets/${editing.id}`, { ...changes, actor: "user" });
       }
@@ -1191,6 +1245,7 @@ async function refresh(force = false) {
     lastPayload = payload;
     tickets = JSON.parse(payload);
     render();
+    mergeOpenTicket();
   } catch {
     $("banner").hidden = false;
   }
