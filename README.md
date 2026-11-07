@@ -12,7 +12,7 @@ uv run server.py --port 9000 --db /path/to/board.db
 ## Use the board
 
 - Drag cards to move or reorder them. The board picks up agent changes within 3 seconds.
-- Click a card to edit it or delete it.
+- Click a card to edit, cancel or delete it. Cancelled tickets stay on record and are hidden until you tick **Show cancelled**. To reopen one, change its status.
 - Use **+ Add** on a column to create a ticket.
 - Use the **Project** menu to filter the board by project, or tick **Ideas only** to see just ideas.
 
@@ -22,7 +22,7 @@ uv run server.py --port 9000 --db /path/to/board.db
 |---|---|---|
 | `title` | Non-empty string (required on create) | |
 | `description` | String | `""` |
-| `status` | `follow_up`, `in_progress`, `done` | `follow_up` |
+| `status` | `follow_up`, `in_progress`, `done`, `cancelled` | `follow_up` |
 | `priority` | `high`, `medium`, `low` | `medium` |
 | `project` | String or `null`, stored lowercase | `null` |
 | `idea` | `true` or `false`; tags the ticket as an idea | `false` |
@@ -67,6 +67,9 @@ existing tag.
   `curl -s http://127.0.0.1:8787/api/tickets -d '{"title": "Try passkey login", "idea": true, "priority": "low", "project": "website"}'`
 - Finishing work:
   `curl -s -X PATCH http://127.0.0.1:8787/api/tickets/42 -d '{"status": "done"}'`
+
+- Dropping work that's no longer needed, which keeps the ticket on record:
+  `curl -s -X PATCH http://127.0.0.1:8787/api/tickets/42 -d '{"status": "cancelled"}'`
 
 To see open work, query `status=follow_up` and `status=in_progress`. `GET /api` describes the full API.
 ````

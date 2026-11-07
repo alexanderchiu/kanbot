@@ -70,6 +70,7 @@
     gap: 12px;
     padding: 0 16px 16px;
   }
+  main.with-cancelled { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .column {
     display: flex;
     flex-direction: column;
@@ -87,6 +88,8 @@
   .column:nth-child(1) h2 { color: var(--blue); }
   .column:nth-child(2) h2 { color: var(--orange); }
   .column:nth-child(3) h2 { color: var(--green); }
+  .column:nth-child(4) h2 { color: var(--muted); }
+  .column:nth-child(4) .title { color: var(--muted); text-decoration: line-through; }
   .count { color: var(--muted); font-variant-numeric: tabular-nums; }
   .add {
     margin-left: auto;
@@ -181,7 +184,7 @@
 
   @media (max-width: 800px) {
     html, body { height: auto; }
-    main { grid-template-columns: minmax(0, 1fr); }
+    main, main.with-cancelled { grid-template-columns: minmax(0, 1fr); }
     .cards { overflow-y: visible; }
     form { grid-template-columns: minmax(0, 1fr); }
   }
@@ -190,7 +193,8 @@
 <body>
 <header>
   <h1>Kanban</h1>
-  <label class="filter" id="ideas-filter"><input type="checkbox" id="ideas-only"> Ideas only</label>
+  <label class="filter"><input type="checkbox" id="show-cancelled"> Show cancelled <span id="cancelled-count"></span></label>
+  <label class="filter"><input type="checkbox" id="ideas-only"> Ideas only</label>
   <label class="filter">Project
     <select id="filter"></select>
   </label>
@@ -222,7 +226,8 @@
     <div id="stamps" class="wide" hidden></div>
     <div class="actions wide">
       <button type="button" class="delete" id="delete">Delete</button>
-      <button type="button" id="cancel">Cancel</button>
+      <button type="button" id="cancel-ticket">Cancel ticket</button>
+      <button type="button" id="close">Close</button>
       <button type="submit" class="primary">Save</button>
     </div>
   </form>
@@ -234,6 +239,7 @@ const COLUMNS = [
   { status: "in_progress", label: "In progress" },
   { status: "done", label: "Done" },
 ];
+const CANCELLED = { status: "cancelled", label: "Cancelled" };
 const PRIORITIES = [
   { value: "high", label: "High" },
   { value: "medium", label: "Medium" },
@@ -243,7 +249,7 @@ const PROJECT_COLORS = ["var(--green)", "var(--blue)", "var(--yellow)", "var(--o
 const POLL_MS = 3000;
 
 const $ = (id) => document.getElementById(id);
-const board = $("board"), filter = $("filter"), ideasOnly = $("ideas-only"), dialog = $("dialog"), form = $("form");
+const board = $("board"), filter = $("filter"), ideasOnly = $("ideas-only"), showCancelled = $("show-cancelled"), dialog = $("dialog"), form = $("form");
 
 let tickets = [];
 let lastPayload = null;
@@ -331,11 +337,14 @@ function renderCard(ticket) {
 function renderColumn({ status, label }, visible) {
   const column = el("section", "column");
   const head = el("div", "column-head");
-  const add = el("button", "add", "+ Add");
-  add.type = "button";
-  add.setAttribute("aria-label", `Add ticket to ${label}`);
-  add.addEventListener("click", () => openDialog(null, status));
-  head.append(el("h2", "", label), el("span", "count", visible.length), add);
+  head.append(el("h2", "", label), el("span", "count", visible.length));
+  if (status !== CANCELLED.status) {
+    const add = el("button", "add", "+ Add");
+    add.type = "button";
+    add.setAttribute("aria-label", `Add ticket to ${label}`);
+    add.addEventListener("click", () => openDialog(null, status));
+    head.append(add);
+  }
 
   const cards = el("div", "cards");
   if (visible.length) cards.append(...visible.map(renderCard));
@@ -361,8 +370,12 @@ function render() {
   const visible = tickets.filter(
     (t) => (!filter.value || t.project === filter.value) && (!ideasOnly.checked || t.idea)
   );
+  const cancelled = visible.filter((t) => t.status === CANCELLED.status);
+  $("cancelled-count").textContent = `(${cancelled.length})`;
+  const columns = showCancelled.checked ? [...COLUMNS, CANCELLED] : COLUMNS;
+  board.classList.toggle("with-cancelled", showCancelled.checked);
   board.replaceChildren(
-    ...COLUMNS.map((column) =>
+    ...columns.map((column) =>
       renderColumn(column, visible.filter((t) => t.status === column.status))
     )
   );
@@ -407,6 +420,7 @@ function openDialog(ticket, status = "follow_up") {
   form.elements.project.value = ticket ? ticket.project ?? "" : filter.value;
   form.elements.idea.checked = ticket ? ticket.idea : ideasOnly.checked;
   $("delete").hidden = !ticket;
+  $("cancel-ticket").hidden = !ticket || ticket.status === CANCELLED.status;
   $("error").hidden = true;
   $("stamps").hidden = !ticket;
   if (ticket) {
@@ -449,7 +463,13 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
-$("cancel").addEventListener("click", () => dialog.close());
+$("close").addEventListener("click", () => dialog.close());
+
+// Submitting the form keeps any edits made in the dialog before cancelling.
+$("cancel-ticket").addEventListener("click", () => {
+  form.elements.status.value = CANCELLED.status;
+  form.requestSubmit();
+});
 
 $("delete").addEventListener("click", async () => {
   if (!confirm(`Delete ticket #${editing.id}? This can't be undone.`)) return;
@@ -472,6 +492,11 @@ ideasOnly.addEventListener("change", () => {
   render();
 });
 
+showCancelled.addEventListener("change", () => {
+  saveSetting("kanban-show-cancelled", showCancelled.checked ? "1" : "");
+  render();
+});
+
 async function refresh(force = false) {
   try {
     const response = await fetch("/api/tickets");
@@ -488,9 +513,10 @@ async function refresh(force = false) {
   }
 }
 
-form.elements.status.append(...COLUMNS.map((c) => new Option(c.label, c.status)));
+form.elements.status.append(...[...COLUMNS, CANCELLED].map((c) => new Option(c.label, c.status)));
 form.elements.priority.append(...PRIORITIES.map((p) => new Option(p.label, p.value)));
 ideasOnly.checked = loadSetting("kanban-ideas-only") === "1";
+showCancelled.checked = loadSetting("kanban-show-cancelled") === "1";
 refresh(true);
 setInterval(refresh, POLL_MS);
 </script>
