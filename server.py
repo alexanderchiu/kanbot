@@ -48,6 +48,19 @@ CREATE TABLE IF NOT EXISTS notes (
 );
 """
 
+HISTORY_TABLE = """
+CREATE TABLE IF NOT EXISTS history (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id INTEGER NOT NULL,
+    actor     TEXT,
+    field     TEXT NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    at        TEXT NOT NULL
+);
+"""
+HISTORY_FIELDS = ("title", "description", "status", "priority", "project", "idea", "assignee")
+
 SELECT_TICKET = (
     "SELECT tickets.*,"
     " (SELECT COUNT(*) FROM notes WHERE notes.ticket_id = tickets.id) AS note_count"
@@ -84,13 +97,14 @@ API_DOCS = {
         "status, project, priority, idea (true or false), assignee, created_by, q "
         "(text search of title and description).",
         "POST /api/tickets": "Create a ticket. Returns it with status 201.",
-        "GET /api/tickets/{id}": "Fetch one ticket, including its notes.",
+        "GET /api/tickets/{id}": "Fetch one ticket, including its notes and its change "
+        "history, newest change first.",
         "POST /api/tickets/{id}/notes": 'Add a note with {"body": "text", "author": '
         '"name"}. Notes are append-only, so use them for progress, handoffs and the '
         "reason a ticket is blocked or cancelled.",
         "PATCH /api/tickets/{id}": "Change any ticket fields. To move a ticket, send "
         '{"status": "done"}. To cancel one and keep it on record, send '
-        '{"status": "cancelled"}.',
+        '{"status": "cancelled"}. Add "actor": "name" to record who made the change.',
         "POST /api/tickets/{id}/claim": 'Send {"assignee": "name"} to take a ticket. '
         "Returns 409 if someone else already holds it. Prefer this to setting assignee "
         "with PATCH, which overrides the current holder.",
@@ -144,6 +158,8 @@ def migrate(db_path):
     with transaction(db_path) as conn:
         conn.execute(NOTES_TABLE)
         conn.execute("CREATE INDEX IF NOT EXISTS notes_ticket ON notes (ticket_id)")
+        conn.execute(HISTORY_TABLE)
+        conn.execute("CREATE INDEX IF NOT EXISTS history_ticket ON history (ticket_id)")
         row = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'tickets'").fetchone()
         if row is None:
             conn.execute(TICKETS_TABLE.format(name="tickets"))
@@ -278,6 +294,17 @@ def fetch_ticket(conn, ticket_id):
     return ticket_json(row)
 
 
+def record_history(conn, ticket_id, actor, field, old, new, at):
+    def text(value):
+        return str(value).lower() if isinstance(value, bool) else value
+
+    conn.execute(
+        "INSERT INTO history (ticket_id, actor, field, old_value, new_value, at)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (ticket_id, actor, field, text(old), text(new), at),
+    )
+
+
 def create_ticket(db_path, body):
     fields = validate(body, creating=True)
     status = fields.get("status", "follow_up")
@@ -303,10 +330,18 @@ def create_ticket(db_path, body):
             ),
         ).lastrowid
         place(conn, ticket_id, status, priority, fields.get("position"))
+        record_history(conn, ticket_id, fields.get("created_by"), "created", None, None, stamp)
         return fetch_ticket(conn, ticket_id)
 
 
 def update_ticket(db_path, ticket_id, body):
+    actor = None
+    if isinstance(body, dict) and "actor" in body:
+        body = dict(body)
+        actor = body.pop("actor")
+        if actor is not None and not isinstance(actor, str):
+            raise ApiError(400, "actor must be a string or null.")
+        actor = normalize_name(actor) if actor else None
     fields = validate(body, creating=False)
     if not fields:
         raise ApiError(400, "No fields to update.")
@@ -330,6 +365,11 @@ def update_ticket(db_path, ticket_id, body):
         )
         if moved:
             place(conn, ticket_id, status, priority, position)
+        for name in HISTORY_FIELDS:
+            if name in fields and fields[name] != current[name]:
+                record_history(
+                    conn, ticket_id, actor, name, current[name], fields[name], fields["updated_at"]
+                )
         return fetch_ticket(conn, ticket_id)
 
 
@@ -342,10 +382,13 @@ def claim_ticket(db_path, ticket_id, body):
         current = fetch_ticket(conn, ticket_id)
         if current["assignee"] not in (None, assignee):
             raise ApiError(409, f"Ticket {ticket_id} is already assigned to {current['assignee']}.")
+        stamp = now()
         conn.execute(
             "UPDATE tickets SET assignee = ?, updated_at = ? WHERE id = ?",
-            (assignee, now(), ticket_id),
+            (assignee, stamp, ticket_id),
         )
+        if current["assignee"] != assignee:
+            record_history(conn, ticket_id, assignee, "assignee", current["assignee"], assignee, stamp)
         return fetch_ticket(conn, ticket_id)
 
 
@@ -375,6 +418,7 @@ def delete_ticket(db_path, ticket_id):
     with transaction(db_path) as conn:
         fetch_ticket(conn, ticket_id)
         conn.execute("DELETE FROM notes WHERE ticket_id = ?", (ticket_id,))
+        conn.execute("DELETE FROM history WHERE ticket_id = ?", (ticket_id,))
         conn.execute("DELETE FROM tickets WHERE id = ?", (ticket_id,))
     return {"deleted": ticket_id}
 
@@ -425,7 +469,16 @@ def get_ticket(db_path, ticket_id):
         notes = conn.execute(
             "SELECT * FROM notes WHERE ticket_id = ? ORDER BY id", (ticket_id,)
         ).fetchall()
-        return {**ticket, "notes": [dict(row) for row in notes]}
+        history = conn.execute(
+            "SELECT actor, field, old_value, new_value, at FROM history"
+            " WHERE ticket_id = ? ORDER BY id DESC",
+            (ticket_id,),
+        ).fetchall()
+        return {
+            **ticket,
+            "notes": [dict(row) for row in notes],
+            "history": [dict(row) for row in history],
+        }
     finally:
         conn.close()
 

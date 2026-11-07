@@ -180,6 +180,10 @@
   .note-meta { color: var(--muted); font-size: 12px; }
   .note-body { white-space: pre-wrap; overflow-wrap: anywhere; }
   #note-input { min-height: 64px; }
+  summary { cursor: pointer; font-weight: 650; }
+  #history { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 13px; }
+  #history .note-meta { display: block; }
+  .history-change { overflow-wrap: anywhere; }
   #error { color: var(--pink); }
   #stamps { color: var(--muted); font-size: 12px; }
   .actions { display: flex; justify-content: flex-end; gap: 8px; }
@@ -254,6 +258,10 @@
     <div class="actions">
       <button type="button" id="add-note">Add note</button>
     </div>
+    <details>
+      <summary>History</summary>
+      <ul id="history"></ul>
+    </details>
   </section>
 </dialog>
 
@@ -440,7 +448,7 @@ async function drop(status, cards, id) {
   }
   dropLine.remove();
   try {
-    await api("PATCH", `/api/tickets/${id}`, { status, position });
+    await api("PATCH", `/api/tickets/${id}`, { status, position, actor: "user" });
   } catch (error) {
     alert(error.message);
   }
@@ -469,6 +477,7 @@ function openDialog(ticket, status = "follow_up") {
   }
   $("activity").hidden = !ticket;
   $("notes").replaceChildren();
+  $("history").replaceChildren();
   $("note-input").value = "";
   if (ticket) loadActivity(ticket.id);
   dialog.showModal();
@@ -482,9 +491,25 @@ async function loadActivity(id) {
     const detail = await api("GET", `/api/tickets/${id}`);
     if (editing?.id !== id) return;
     $("notes").replaceChildren(...detail.notes.map(renderNote));
+    $("history").replaceChildren(...detail.history.map(renderHistoryEntry));
   } catch (error) {
     showError(error.message);
   }
+}
+
+function describeChange({ field, old_value, new_value }) {
+  if (field === "created") return "Created the ticket";
+  if (field === "description") return "Changed the description";
+  const label = (value) =>
+    [...COLUMNS, CANCELLED].find((c) => c.status === value)?.label ?? value ?? "none";
+  return `Changed ${field}: ${label(old_value)} → ${label(new_value)}`;
+}
+
+function renderHistoryEntry(entry) {
+  const node = el("li");
+  const by = entry.actor ? `${entry.actor} · ` : "";
+  node.append(el("span", "history-change", describeChange(entry)), el("span", "note-meta", `${by}${timestamp(entry.at)}`));
+  return node;
 }
 
 function renderNote(note) {
@@ -516,7 +541,9 @@ form.addEventListener("submit", async (event) => {
       const changes = Object.fromEntries(
         Object.entries(values).filter(([key, value]) => value !== editing[key])
       );
-      if (Object.keys(changes).length) await api("PATCH", `/api/tickets/${editing.id}`, changes);
+      if (Object.keys(changes).length) {
+        await api("PATCH", `/api/tickets/${editing.id}`, { ...changes, actor: "user" });
+      }
     } else {
       await api("POST", "/api/tickets", { ...values, created_by: "user" });
     }

@@ -241,6 +241,46 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM notes").fetchone(), (0,))
         conn.close()
 
+    def test_history(self):
+        ticket = self.create(title="Start", created_by="Agent")
+        path = f"/api/tickets/{ticket['id']}"
+
+        def changes():
+            history = self.call("GET", path)[1]["history"]
+            return [(h["actor"], h["field"], h["old_value"], h["new_value"]) for h in reversed(history)]
+
+        self.assertEqual(changes(), [("agent", "created", None, None)])
+
+        self.call("PATCH", path, {"status": "done", "priority": "high", "idea": True, "actor": "Alex"})
+        self.assertEqual(
+            changes()[1:],
+            [
+                ("alex", "status", "follow_up", "done"),
+                ("alex", "priority", "medium", "high"),
+                ("alex", "idea", "false", "true"),
+            ],
+        )
+
+        # Unchanged values and reordering aren't recorded.
+        before = changes()
+        self.call("PATCH", path, {"status": "done", "title": "Start", "position": 0})
+        self.assertEqual(changes(), before)
+
+        self.call("PATCH", path, {"title": "Renamed"})
+        self.assertEqual(changes()[-1], (None, "title", "Start", "Renamed"))
+        self.call("POST", f"{path}/claim", {"assignee": "bot"})
+        self.assertEqual(changes()[-1], ("bot", "assignee", None, "bot"))
+
+        self.assertEqual(self.call("PATCH", path, {"actor": "alex"})[0], 400)
+        self.assertEqual(self.call("PATCH", path, {"title": "x", "actor": 3})[0], 400)
+        self.assertEqual(self.call("POST", "/api/tickets", {"title": "x", "actor": "a"})[0], 400)
+        self.assertNotIn("history", self.call("GET", "/api/tickets")[1][0])
+
+        self.call("DELETE", path)
+        conn = sqlite3.connect(self.db)
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM history").fetchone(), (0,))
+        conn.close()
+
     def test_delete(self):
         ticket = self.create()
         path = f"/api/tickets/{ticket['id']}"

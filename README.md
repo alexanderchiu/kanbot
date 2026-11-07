@@ -64,12 +64,14 @@ If you don't set `position`, a ticket goes after the last ticket of equal or hig
 | `GET /api` | API description, in JSON |
 | `GET /api/tickets` | List tickets in board order; filter with `status`, `project`, `priority`, `idea`, `assignee`, `created_by`, `q` |
 | `POST /api/tickets` | Create a ticket |
-| `GET /api/tickets/{id}` | Get a ticket, including its notes |
-| `PATCH /api/tickets/{id}` | Change or move a ticket |
+| `GET /api/tickets/{id}` | Get a ticket, including its notes and change history |
+| `PATCH /api/tickets/{id}` | Change or move a ticket; add `"actor": "name"` to record who did it |
 | `POST /api/tickets/{id}/notes` | Add a note with `{"body": "text", "author": "name"}` |
 | `POST /api/tickets/{id}/claim` | Take a ticket with `{"assignee": "name"}`; returns 409 if someone else holds it |
 | `DELETE /api/tickets/{id}` | Delete a ticket permanently |
 | `GET /api/projects` | List project tags with ticket counts |
+
+Every change to a ticket's fields is recorded in its history, except reordering. History starts from when this feature was added, and deleting a ticket deletes its history.
 
 Errors return a 4xx or 5xx status with `{"error": "message"}`.
 
@@ -95,14 +97,14 @@ existing tag.
 - Recording an idea, as opposed to committed work:
   `curl -s http://127.0.0.1:8787/api/tickets -d '{"title": "Try passkey login", "idea": true, "priority": "low", "project": "website", "created_by": "claude-code"}'`
 - Finishing work:
-  `curl -s -X PATCH http://127.0.0.1:8787/api/tickets/42 -d '{"status": "done"}'`
+  `curl -s -X PATCH http://127.0.0.1:8787/api/tickets/42 -d '{"status": "done", "actor": "claude-code"}'`
 
 - Recording progress, a handoff, or why work is blocked or cancelled:
   `curl -s http://127.0.0.1:8787/api/tickets/42/notes -d '{"body": "Waiting on the API key.", "author": "claude-code"}'`
 - Marking work as stuck:
-  `curl -s -X PATCH http://127.0.0.1:8787/api/tickets/42 -d '{"status": "blocked"}'`
+  `curl -s -X PATCH http://127.0.0.1:8787/api/tickets/42 -d '{"status": "blocked", "actor": "claude-code"}'`
 - Dropping work that's no longer needed, which keeps the ticket on record:
-  `curl -s -X PATCH http://127.0.0.1:8787/api/tickets/42 -d '{"status": "cancelled"}'`
+  `curl -s -X PATCH http://127.0.0.1:8787/api/tickets/42 -d '{"status": "cancelled", "actor": "claude-code"}'`
 
 To see open work, query `status=follow_up` and `status=in_progress`. `GET /api` describes the full API.
 ````
