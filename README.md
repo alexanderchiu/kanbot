@@ -43,6 +43,8 @@ Each time the server starts, it copies the database to `backups/` beside it, unl
 | `priority` | `high`, `medium`, `low` | `medium` |
 | `project` | String or `null`, stored lowercase | `null` |
 | `idea` | `true` or `false`; tags the ticket as an idea | `false` |
+| `created_by` | String or `null`, stored lowercase; can only be set on create | `null` |
+| `assignee` | String or `null`, stored lowercase | `null` |
 | `position` | Integer index within the column, from 0 | Placed by priority |
 
 Tickets also return these read-only fields:
@@ -59,10 +61,11 @@ If you don't set `position`, a ticket goes after the last ticket of equal or hig
 | Request | Purpose |
 |---|---|
 | `GET /api` | API description, in JSON |
-| `GET /api/tickets` | List tickets in board order; filter with `status`, `project`, `priority`, `idea`, `q` |
+| `GET /api/tickets` | List tickets in board order; filter with `status`, `project`, `priority`, `idea`, `assignee`, `created_by`, `q` |
 | `POST /api/tickets` | Create a ticket |
 | `GET /api/tickets/{id}` | Get a ticket |
 | `PATCH /api/tickets/{id}` | Change or move a ticket |
+| `POST /api/tickets/{id}/claim` | Take a ticket with `{"assignee": "name"}`; returns 409 if someone else holds it |
 | `DELETE /api/tickets/{id}` | Delete a ticket permanently |
 | `GET /api/projects` | List project tags with ticket counts |
 
@@ -82,11 +85,13 @@ existing tag.
 - Before creating a ticket, check for a duplicate:
   `curl -s 'http://127.0.0.1:8787/api/tickets?q=login'`
 - Starting work (priority is `high`, `medium` or `low`):
-  `curl -s http://127.0.0.1:8787/api/tickets -d '{"title": "Fix login bug", "status": "in_progress", "priority": "high", "project": "website"}'`
+  `curl -s http://127.0.0.1:8787/api/tickets -d '{"title": "Fix login bug", "status": "in_progress", "priority": "high", "project": "website", "created_by": "claude-code", "assignee": "claude-code"}'`
+- Taking an existing ticket, which fails with a 409 if someone else holds it:
+  `curl -s http://127.0.0.1:8787/api/tickets/42/claim -d '{"assignee": "claude-code"}'`
 - Recording work for later:
-  `curl -s http://127.0.0.1:8787/api/tickets -d '{"title": "Add login tests", "description": "Cover the expired-session case.", "project": "website"}'`
+  `curl -s http://127.0.0.1:8787/api/tickets -d '{"title": "Add login tests", "description": "Cover the expired-session case.", "project": "website", "created_by": "claude-code"}'`
 - Recording an idea, as opposed to committed work:
-  `curl -s http://127.0.0.1:8787/api/tickets -d '{"title": "Try passkey login", "idea": true, "priority": "low", "project": "website"}'`
+  `curl -s http://127.0.0.1:8787/api/tickets -d '{"title": "Try passkey login", "idea": true, "priority": "low", "project": "website", "created_by": "claude-code"}'`
 - Finishing work:
   `curl -s -X PATCH http://127.0.0.1:8787/api/tickets/42 -d '{"status": "done"}'`
 

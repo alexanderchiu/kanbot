@@ -173,6 +173,46 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(self.titles("blocked"), ["stuck"])
         self.assertIsNone(ticket["completed_at"])
 
+    def test_creator_and_assignee(self):
+        ticket = self.create(created_by=" Claude ", assignee="Claude")
+        self.assertEqual(ticket["created_by"], "claude")
+        self.assertEqual(ticket["assignee"], "claude")
+        self.assertIsNone(self.create(title="other")["created_by"])
+        path = f"/api/tickets/{ticket['id']}"
+
+        self.assertEqual(self.call("PATCH", path, {"created_by": "x"})[0], 400)
+        self.assertEqual(self.call("POST", "/api/tickets", {"title": "x", "assignee": 1})[0], 400)
+        self.assertEqual(self.call("PATCH", path, {"assignee": "Alex"})[1]["assignee"], "alex")
+        self.assertIsNone(self.call("PATCH", path, {"assignee": None})[1]["assignee"])
+        self.call("PATCH", path, {"assignee": "alex"})
+
+        def titles(query):
+            return [t["title"] for t in self.call("GET", f"/api/tickets?{query}")[1]]
+
+        self.assertEqual(titles("assignee=ALEX"), ["Ticket"])
+        self.assertEqual(titles("created_by=claude"), ["Ticket"])
+        self.assertEqual(titles("assignee=nobody"), [])
+
+    def test_claim(self):
+        path = f"/api/tickets/{self.create()['id']}/claim"
+        status, ticket = self.call("POST", path, {"assignee": "Agent-A"})
+        self.assertEqual((status, ticket["assignee"]), (200, "agent-a"))
+        self.assertEqual(self.call("POST", path, {"assignee": "agent-a"})[0], 200)
+        status, error = self.call("POST", path, {"assignee": "agent-b"})
+        self.assertEqual(status, 409)
+        self.assertIn("agent-a", error["error"])
+        for body in ({}, {"assignee": "  "}, {"assignee": 3}, []):
+            self.assertEqual(self.call("POST", path, body)[0], 400)
+        self.assertEqual(self.call("POST", "/api/tickets/999/claim", {"assignee": "x"})[0], 404)
+
+    def test_only_one_concurrent_claim_wins(self):
+        path = f"/api/tickets/{self.create()['id']}/claim"
+        with ThreadPoolExecutor(8) as pool:
+            statuses = list(
+                pool.map(lambda i: self.call("POST", path, {"assignee": f"agent-{i}"})[0], range(8))
+            )
+        self.assertEqual(sorted(statuses), [200] + [409] * 7)
+
     def test_delete(self):
         ticket = self.create()
         path = f"/api/tickets/{ticket['id']}"
@@ -383,6 +423,7 @@ class MigrationTest(unittest.TestCase):
                     {
                         "id": 1, "title": "first", "description": "", "status": "in_progress",
                         "priority": "high", "project": "web", "idea": True, "position": 4,
+                        "created_by": None, "assignee": None,
                         "created_at": "then", "updated_at": "later", "completed_at": None,
                     },
                 )

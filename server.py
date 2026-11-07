@@ -17,6 +17,7 @@ ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
 MAX_BODY = 1024 * 1024
 BACKUPS_KEPT = 30
 TICKET_PATH = re.compile(r"^/api/tickets/(\d{1,18})$")
+CLAIM_PATH = re.compile(r"^/api/tickets/(\d{1,18})/claim$")
 
 TICKETS_TABLE = """
 CREATE TABLE {name} (
@@ -27,6 +28,8 @@ CREATE TABLE {name} (
     priority    TEXT NOT NULL CHECK (priority IN ('high', 'medium', 'low')),
     project     TEXT,
     idea        INTEGER NOT NULL DEFAULT 0,
+    created_by  TEXT,
+    assignee    TEXT,
     position    INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL,
@@ -45,6 +48,9 @@ API_DOCS = {
         "priority": "high | medium | low, default medium",
         "project": "string or null; project tag, stored lowercase",
         "idea": "boolean, default false; tags the ticket as an idea",
+        "created_by": "string or null; who created the ticket, stored lowercase. "
+        "Can only be set on create.",
+        "assignee": "string or null; who is working on it, stored lowercase",
         "position": "integer >= 0; index within the column. If omitted, the ticket "
         "is placed by priority.",
     },
@@ -57,13 +63,16 @@ API_DOCS = {
     },
     "endpoints": {
         "GET /api/tickets": "List tickets in board order. Optional query parameters: "
-        "status, project, priority, idea (true or false), q (text search of title "
-        "and description).",
+        "status, project, priority, idea (true or false), assignee, created_by, q "
+        "(text search of title and description).",
         "POST /api/tickets": "Create a ticket. Returns it with status 201.",
         "GET /api/tickets/{id}": "Fetch one ticket.",
         "PATCH /api/tickets/{id}": "Change any ticket fields. To move a ticket, send "
         '{"status": "done"}. To cancel one and keep it on record, send '
         '{"status": "cancelled"}.',
+        "POST /api/tickets/{id}/claim": 'Send {"assignee": "name"} to take a ticket. '
+        "Returns 409 if someone else already holds it. Prefer this to setting assignee "
+        "with PATCH, which overrides the current holder.",
         "DELETE /api/tickets/{id}": "Delete a ticket permanently.",
         "GET /api/projects": "List project tags in use, with ticket counts.",
     },
@@ -116,7 +125,7 @@ def migrate(db_path):
         if row is None:
             conn.execute(TICKETS_TABLE.format(name="tickets"))
             return
-        if "blocked" in row["sql"]:
+        if "assignee" in row["sql"]:
             return
 
         columns = ", ".join(r["name"] for r in conn.execute("PRAGMA table_info(tickets)"))
@@ -161,7 +170,7 @@ def backup_database(db_path, backup_dir, keep=BACKUPS_KEPT):
     return target
 
 
-def normalize_project(value):
+def normalize_name(value):
     return value.strip().lower() or None
 
 
@@ -189,11 +198,14 @@ def validate(body, creating):
             if body[name] not in allowed:
                 raise ApiError(400, f"{name} must be one of: {', '.join(allowed)}.")
             fields[name] = body[name]
-    if "project" in body:
-        value = body["project"]
-        if value is not None and not isinstance(value, str):
-            raise ApiError(400, "project must be a string or null.")
-        fields["project"] = normalize_project(value) if value else None
+    if "created_by" in body and not creating:
+        raise ApiError(400, "created_by can only be set when creating a ticket.")
+    for name in ("project", "created_by", "assignee"):
+        if name in body:
+            value = body[name]
+            if value is not None and not isinstance(value, str):
+                raise ApiError(400, f"{name} must be a string or null.")
+            fields[name] = normalize_name(value) if value else None
     if "idea" in body:
         if not isinstance(body["idea"], bool):
             raise ApiError(400, "idea must be true or false.")
@@ -251,7 +263,8 @@ def create_ticket(db_path, body):
     with transaction(db_path) as conn:
         ticket_id = conn.execute(
             "INSERT INTO tickets (title, description, status, priority, project, idea,"
-            " created_at, updated_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " created_by, assignee, created_at, updated_at, completed_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 fields["title"],
                 fields.get("description", ""),
@@ -259,6 +272,8 @@ def create_ticket(db_path, body):
                 priority,
                 fields.get("project"),
                 fields.get("idea", False),
+                fields.get("created_by"),
+                fields.get("assignee"),
                 stamp,
                 stamp,
                 stamp if status == "done" else None,
@@ -295,6 +310,22 @@ def update_ticket(db_path, ticket_id, body):
         return fetch_ticket(conn, ticket_id)
 
 
+def claim_ticket(db_path, ticket_id, body):
+    assignee = body.get("assignee") if isinstance(body, dict) else None
+    if not isinstance(assignee, str) or not normalize_name(assignee):
+        raise ApiError(400, "assignee must be a non-empty string.")
+    assignee = normalize_name(assignee)
+    with transaction(db_path) as conn:
+        current = fetch_ticket(conn, ticket_id)
+        if current["assignee"] not in (None, assignee):
+            raise ApiError(409, f"Ticket {ticket_id} is already assigned to {current['assignee']}.")
+        conn.execute(
+            "UPDATE tickets SET assignee = ?, updated_at = ? WHERE id = ?",
+            (assignee, now(), ticket_id),
+        )
+        return fetch_ticket(conn, ticket_id)
+
+
 def delete_ticket(db_path, ticket_id):
     with transaction(db_path) as conn:
         fetch_ticket(conn, ticket_id)
@@ -304,7 +335,7 @@ def delete_ticket(db_path, ticket_id):
 
 def list_tickets(db_path, query):
     params = {key: values[-1] for key, values in parse_qs(query).items()}
-    unknown = set(params) - {"status", "project", "priority", "idea", "q"}
+    unknown = set(params) - {"status", "project", "priority", "idea", "assignee", "created_by", "q"}
     if unknown:
         raise ApiError(400, f"Unknown query parameters: {', '.join(sorted(unknown))}.")
 
@@ -315,9 +346,10 @@ def list_tickets(db_path, query):
                 raise ApiError(400, f"{name} must be one of: {', '.join(allowed)}.")
             where.append(f"{name} = ?")
             args.append(params[name])
-    if "project" in params:
-        where.append("project IS ?")
-        args.append(normalize_project(params["project"]))
+    for name in ("project", "assignee", "created_by"):
+        if name in params:
+            where.append(f"{name} IS ?")
+            args.append(normalize_name(params[name]))
     if "idea" in params:
         if params["idea"] not in ("true", "false"):
             raise ApiError(400, "idea must be true or false.")
@@ -412,6 +444,7 @@ class Handler(BaseHTTPRequestHandler):
         db = self.server.db_path
         method = self.command
         match = TICKET_PATH.match(path)
+        claim = CLAIM_PATH.match(path)
 
         if method == "GET" and path == "/":
             html = (HERE / "index.html").read_bytes()
@@ -431,6 +464,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(200, update_ticket(db, ticket_id, self.read_body()))
             if method == "DELETE":
                 return self.send_json(200, delete_ticket(db, ticket_id))
+        if claim and method == "POST":
+            return self.send_json(200, claim_ticket(db, int(claim[1]), self.read_body()))
         if method == "GET" and path == "/api/projects":
             return self.send_json(200, list_projects(db))
         raise ApiError(404, f"No route for {method} {path}. See GET /api for the API docs.")

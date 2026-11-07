@@ -151,6 +151,7 @@
     border-radius: 4px;
     color: var(--chip);
   }
+  .assignee { color: var(--text); overflow-wrap: anywhere; }
   .id { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
 
   dialog {
@@ -221,6 +222,9 @@
     <label>Project
       <input name="project" list="project-list" autocomplete="off">
       <datalist id="project-list"></datalist>
+    </label>
+    <label>Assignee
+      <input name="assignee" autocomplete="off">
     </label>
     <label class="check wide"><input type="checkbox" name="idea"> This ticket is an idea</label>
     <div id="error" class="wide" role="alert" hidden></div>
@@ -325,6 +329,7 @@ function renderCard(ticket) {
   const date = ticket.completed_at
     ? `Completed ${shortDate(ticket.completed_at)}`
     : `Created ${shortDate(ticket.created_at)}`;
+  if (ticket.assignee) meta.append(el("span", "assignee", `@${ticket.assignee}`));
   meta.append(el("span", "id", `${date} · #${ticket.id}`));
   card.append(meta);
 
@@ -427,6 +432,7 @@ function openDialog(ticket, status = "follow_up") {
   form.elements.status.value = ticket?.status ?? status;
   form.elements.priority.value = ticket?.priority ?? "medium";
   form.elements.project.value = ticket ? ticket.project ?? "" : filter.value;
+  form.elements.assignee.value = ticket?.assignee ?? "";
   form.elements.idea.checked = ticket ? ticket.idea : ideasOnly.checked;
   $("delete").hidden = !ticket;
   $("cancel-ticket").hidden = !ticket || ticket.status === CANCELLED.status;
@@ -435,7 +441,8 @@ function openDialog(ticket, status = "follow_up") {
   if (ticket) {
     const when = (iso) => new Date(iso).toLocaleString();
     const completed = ticket.completed_at ? ` · Completed ${when(ticket.completed_at)}` : "";
-    $("stamps").textContent = `Created ${when(ticket.created_at)}${completed} · Updated ${when(ticket.updated_at)}`;
+    const creator = ticket.created_by ? ` by ${ticket.created_by}` : "";
+    $("stamps").textContent = `Created ${when(ticket.created_at)}${creator}${completed} · Updated ${when(ticket.updated_at)}`;
   }
   dialog.showModal();
   form.elements.title.focus();
@@ -455,6 +462,7 @@ form.addEventListener("submit", async (event) => {
     priority: form.elements.priority.value,
     project: form.elements.project.value.trim().toLowerCase() || null,
     idea: form.elements.idea.checked,
+    assignee: form.elements.assignee.value.trim().toLowerCase() || null,
   };
   try {
     if (editing) {
@@ -464,7 +472,7 @@ form.addEventListener("submit", async (event) => {
       );
       if (Object.keys(changes).length) await api("PATCH", `/api/tickets/${editing.id}`, changes);
     } else {
-      await api("POST", "/api/tickets", values);
+      await api("POST", "/api/tickets", { ...values, created_by: "user" });
     }
     dialog.close();
     await refresh(true);
