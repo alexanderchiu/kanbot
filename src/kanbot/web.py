@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from kanbot import __version__
 from kanbot.agents import delete_agent, list_agents, record_event
 from kanbot.api_docs import API_DOCS
-from kanbot.db import backup_database, connect, migrate, tickets_table_outdated
+from kanbot.db import Database
 from kanbot.errors import ApiError
 from kanbot.stats import ticket_stats
 from kanbot.tickets import (
@@ -120,7 +120,7 @@ class Handler(BaseHTTPRequestHandler):
         self.check_request_source()
         url = urlsplit(self.path)
         path = url.path.rstrip("/") or "/"
-        db = self.server.db_path
+        db = self.server.db
         method = self.command
         match = TICKET_PATH.match(path)
         claim = CLAIM_PATH.match(path)
@@ -183,22 +183,35 @@ class Handler(BaseHTTPRequestHandler):
 class Server(ThreadingHTTPServer):
     # The default queue of 5 drops connections when many agents call at once.
     request_queue_size = 128
+    db = None
+
+    def server_close(self):
+        super().server_close()
+        if self.db is not None:
+            self.db.close()
 
 
-def make_server(db_path, port, backup_dir=None, host="127.0.0.1", allowed_hosts=()):
+def make_server(database, port, backup_dir=None, host="127.0.0.1", allowed_hosts=(), migrate=True):
+    """Serve a database, given as a Database, a SQLite file path or a database URL.
+
+    With migrate=False the schema is only checked, for setups where CI runs migrations.
+    """
     # Bind first: if the port is taken, another server is using the database.
     server = Server((host, port), Handler)
-    extra = {name.strip().lower() for name in allowed_hosts if name.strip()}
-    server.allowed_hosts = LOCAL_HOSTS | extra
-    if backup_dir:
-        # Back up before migrating, so a bad upgrade can be undone. A migration always
-        # gets a fresh copy, because a restored file's old mtime can look unchanged.
-        conn = connect(db_path)
-        try:
-            outdated = tickets_table_outdated(conn)
-        finally:
-            conn.close()
-        backup_database(db_path, backup_dir, force=outdated)
-    migrate(db_path)
-    server.db_path = str(db_path)
+    try:
+        extra = {name.strip().lower() for name in allowed_hosts if name.strip()}
+        server.allowed_hosts = LOCAL_HOSTS | extra
+        server.db = database if isinstance(database, Database) else Database(database)
+        if not migrate:
+            if warning := server.db.check_schema():
+                print(warning, flush=True)
+            return server
+        if backup_dir:
+            # Back up before migrating, so a bad upgrade can be undone. A migration always
+            # gets a fresh copy, because a restored file's old mtime can look unchanged.
+            server.db.backup(backup_dir, force=server.db.needs_upgrade())
+        server.db.upgrade()
+    except BaseException:
+        server.server_close()
+        raise
     return server

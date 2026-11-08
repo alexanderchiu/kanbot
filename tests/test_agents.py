@@ -1,6 +1,5 @@
 import io
 import json
-import sqlite3
 import tempfile
 import threading
 import unittest
@@ -10,16 +9,16 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
+from backends import PostgresBackend, SqliteBackend
+
 from kanbot import hook, hook_install
 from kanbot.agents import ticket_from_command
 from kanbot.web import make_server
 
 
-class AgentsTest(unittest.TestCase):
+class AgentsTest(SqliteBackend, unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.db = Path(self.tmp.name) / "test.db"
+        self.db = self.new_database()
         self.server = make_server(self.db, 0)
         self.base = f"http://127.0.0.1:{self.server.server_port}"
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
@@ -45,14 +44,13 @@ class AgentsTest(unittest.TestCase):
         return self.call("GET", f"/api/agents{query}")[1]
 
     def backdate(self, column, seconds):
-        conn = sqlite3.connect(self.db)
-        rows = conn.execute(f"SELECT key, {column} FROM agent_sessions").fetchall()
-        for key, value in rows:
+        for key, value in self.sql(f"SELECT key, {column} FROM agent_sessions"):
             if value:
                 stamp = hook_time_minus(value, seconds)
-                conn.execute(f"UPDATE agent_sessions SET {column} = ? WHERE key = ?", (stamp, key))
-        conn.commit()
-        conn.close()
+                self.sql(
+                    f"UPDATE agent_sessions SET {column} = :stamp WHERE key = :key",
+                    {"stamp": stamp, "key": key},
+                )
 
     def test_session_lifecycle(self):
         self.event("SessionStart", model="claude-opus-5-5")
@@ -95,7 +93,10 @@ class AgentsTest(unittest.TestCase):
     def test_prompts_and_tool_input_are_not_stored(self):
         self.event("UserPromptSubmit", prompt="top secret plan")
         self.event("PreToolUse", tool_name="Bash", tool_input={"command": "cat ~/.ssh/id_rsa"})
-        dump = "\n".join(sqlite3.connect(self.db).iterdump())
+        dump = "\n".join(
+            repr(self.sql(f"SELECT * FROM {table}"))
+            for table in ("agent_sessions", "tickets", "notes", "history")
+        )
         self.assertNotIn("top secret plan", dump)
         self.assertNotIn("id_rsa", dump)
 
@@ -209,6 +210,10 @@ def hook_time_minus(value, seconds):
     from kanbot.agents import parse_time
 
     return (parse_time(value) - timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+class PostgresAgentsTest(PostgresBackend, AgentsTest):
+    """The same tests against Postgres."""
 
 
 class HookScriptTest(unittest.TestCase):

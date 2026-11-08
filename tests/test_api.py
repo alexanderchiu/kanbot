@@ -1,21 +1,19 @@
 import http.client
 import json
-import sqlite3
-import tempfile
 import threading
 import unittest
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
+
+from backends import PostgresBackend, SqliteBackend
 
 from kanbot.web import make_server
 
 
-class ApiTest(unittest.TestCase):
+class ApiTest(SqliteBackend, unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.db = Path(self.tmp.name) / "test.db"
+        self.db = self.new_database()
         self.server = make_server(self.db, 0)
         self.base = f"http://127.0.0.1:{self.server.server_port}"
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
@@ -23,7 +21,6 @@ class ApiTest(unittest.TestCase):
     def tearDown(self):
         self.server.shutdown()
         self.server.server_close()
-        self.tmp.cleanup()
 
     def call(self, method, path, body=None, headers=None, raw=None):
         data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
@@ -98,13 +95,16 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(titles("q=%25"), {"Fix 100% bug"})
 
     def set_times(self, ticket, created_at, completed_at, status="done"):
-        conn = sqlite3.connect(self.db)
-        with conn:
-            conn.execute(
-                "UPDATE tickets SET status = ?, created_at = ?, completed_at = ? WHERE id = ?",
-                (status, created_at, completed_at, ticket["id"]),
-            )
-        conn.close()
+        self.sql(
+            "UPDATE tickets SET status = :status, created_at = :created, completed_at = :completed"
+            " WHERE id = :id",
+            {
+                "status": status,
+                "created": created_at,
+                "completed": completed_at,
+                "id": ticket["id"],
+            },
+        )
 
     def test_stats_empty_board(self):
         status, stats = self.call("GET", "/api/stats")
@@ -245,10 +245,7 @@ class ApiTest(unittest.TestCase):
 
         # Editing a finished ticket doesn't change when it was completed.
         with self.subTest("edit keeps completion time"):
-            conn = sqlite3.connect(self.db)
-            conn.execute("UPDATE tickets SET completed_at = 'earlier'")
-            conn.commit()
-            conn.close()
+            self.sql("UPDATE tickets SET completed_at = 'earlier'")
             _, edited = self.call("PATCH", path, {"title": "Edited"})
             self.assertEqual(edited["completed_at"], "earlier")
             _, again = self.call("PATCH", path, {"status": "done"})
@@ -339,9 +336,7 @@ class ApiTest(unittest.TestCase):
         self.call("DELETE", path)
         next_ticket = self.create()
         self.assertEqual(self.call("GET", f"/api/tickets/{next_ticket['id']}")[1]["notes"], [])
-        conn = sqlite3.connect(self.db)
-        self.assertEqual(conn.execute("SELECT COUNT(*) FROM notes").fetchone(), (0,))
-        conn.close()
+        self.assertEqual(self.sql("SELECT COUNT(*) FROM notes"), [(0,)])
 
     def test_history(self):
         ticket = self.create(title="Start", created_by="Agent")
@@ -383,9 +378,7 @@ class ApiTest(unittest.TestCase):
         self.assertNotIn("history", self.call("GET", "/api/tickets")[1][0])
 
         self.call("DELETE", path)
-        conn = sqlite3.connect(self.db)
-        self.assertEqual(conn.execute("SELECT COUNT(*) FROM history").fetchone(), (0,))
-        conn.close()
+        self.assertEqual(self.sql("SELECT COUNT(*) FROM history"), [(0,)])
 
     def test_dependencies(self):
         first = self.create(title="first")["id"]
@@ -539,3 +532,7 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(set(statuses), {201})
         _, tickets = self.call("GET", "/api/tickets")
         self.assertEqual([t["position"] for t in tickets], list(range(40)))
+
+
+class PostgresApiTest(PostgresBackend, ApiTest):
+    """The same tests against Postgres."""

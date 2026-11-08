@@ -1,198 +1,197 @@
-"""SQLite connection, schema, migrations and backups."""
+"""Database access for SQLite and Postgres (including Supabase), with Alembic migrations."""
 
 import sqlite3
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from importlib import resources
 from pathlib import Path
 
-STATUSES = ("follow_up", "in_progress", "blocked", "done", "cancelled")
-PRIORITIES = ("high", "medium", "low")
-BACKUPS_KEPT = 30
+import sqlalchemy as sa
+from alembic import command
+from alembic.config import Config
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 
-TICKETS_TABLE = """
-CREATE TABLE {name} (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    title       TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
-    status      TEXT NOT NULL CHECK (status IN ('follow_up', 'in_progress', 'blocked', 'done', 'cancelled')),
-    priority    TEXT NOT NULL CHECK (priority IN ('high', 'medium', 'low')),
-    project     TEXT,
-    idea        INTEGER NOT NULL DEFAULT 0,
-    created_by  TEXT,
-    assignee    TEXT,
-    position    INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL,
-    completed_at TEXT
-);
-"""  # noqa: E501
+from kanbot import legacy
+from kanbot.schema import PRIORITIES, STATUSES
 
-AGENT_SESSIONS_TABLE = """
-CREATE TABLE IF NOT EXISTS agent_sessions (
-    key                   TEXT PRIMARY KEY,
-    session_id            TEXT NOT NULL,
-    agent_id              TEXT,
-    agent_type            TEXT,
-    parent_key            TEXT,
-    model                 TEXT,
-    cwd                   TEXT,
-    project               TEXT,
-    state                 TEXT NOT NULL,
-    state_detail          TEXT,
-    state_since           TEXT NOT NULL,
-    started_at            TEXT NOT NULL,
-    last_event_at         TEXT NOT NULL,
-    ended_at              TEXT,
-    working_since         TEXT,
-    working_seconds       REAL NOT NULL DEFAULT 0,
-    turns                 INTEGER NOT NULL DEFAULT 0,
-    tool_calls            INTEGER NOT NULL DEFAULT 0,
-    last_tool             TEXT,
-    input_tokens          INTEGER NOT NULL DEFAULT 0,
-    output_tokens         INTEGER NOT NULL DEFAULT 0,
-    cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
-    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
-    ticket_id             INTEGER,
-    state_ts              REAL
-);
-"""
+__all__ = ["PRIORITIES", "STATUSES", "RESOLVED_STATUSES", "Database", "now"]
 
-NOTES_TABLE = """
-CREATE TABLE IF NOT EXISTS notes (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    ticket_id  INTEGER NOT NULL,
-    author     TEXT,
-    body       TEXT NOT NULL,
-    created_at TEXT NOT NULL
-);
-"""
-
-HISTORY_TABLE = """
-CREATE TABLE IF NOT EXISTS history (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    ticket_id INTEGER NOT NULL,
-    actor     TEXT,
-    field     TEXT NOT NULL,
-    old_value TEXT,
-    new_value TEXT,
-    at        TEXT NOT NULL
-);
-"""
-DEPENDENCIES_TABLE = """
-CREATE TABLE IF NOT EXISTS dependencies (
-    ticket_id  INTEGER NOT NULL,
-    depends_on INTEGER NOT NULL,
-    PRIMARY KEY (ticket_id, depends_on)
-);
-"""
 RESOLVED_STATUSES = ("done", "cancelled")
+BACKUPS_KEPT = 30
+# The revision an unversioned SQLite file matches once legacy.upgrade has run on it.
+BASELINE = "0001"
+# Postgres advisory lock that serialises writes, like SQLite's BEGIN IMMEDIATE.
+WRITE_LOCK = 0x6B616E626F74  # "kanbot"
 
 
 def now():
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def connect(db_path):
-    conn = sqlite3.connect(db_path, timeout=10, isolation_level=None)
-    conn.row_factory = sqlite3.Row
-    return conn
+def database_url(target):
+    """Turn a file path or a database URL into a SQLAlchemy URL."""
+    target = str(target)
+    if "://" not in target:
+        return sa.URL.create("sqlite", database=str(Path(target).resolve()))
+    url = sa.make_url(target)
+    # Supabase and most hosts hand out postgres:// or postgresql:// URLs.
+    if url.drivername in ("postgres", "postgresql"):
+        url = url.set(drivername="postgresql+psycopg")
+    return url
 
 
-@contextmanager
-def transaction(db_path):
-    """Serialise writes, so concurrent agents can't interleave column renumbering."""
-    conn = connect(db_path)
-    try:
-        conn.execute("BEGIN IMMEDIATE")
-        yield conn
-        conn.execute("COMMIT")
-    except BaseException:
-        if conn.in_transaction:
-            conn.execute("ROLLBACK")
-        raise
-    finally:
-        conn.close()
+class Conn:
+    """A connection that runs plain SQL with :named parameters and returns mappings."""
+
+    def __init__(self, connection):
+        self.connection = connection
+
+    def execute(self, sql, params=None):
+        return self.connection.execute(sa.text(sql), params or {}).mappings()
+
+    def executemany(self, sql, rows):
+        if rows:
+            self.connection.execute(sa.text(sql), rows)
+
+    def rowcount(self, sql, params=None):
+        """Run a statement and return how many rows it changed."""
+        return self.connection.execute(sa.text(sql), params or {}).rowcount
+
+    def scalar(self, sql, params=None):
+        return self.connection.execute(sa.text(sql), params or {}).scalar()
 
 
-def tickets_table_outdated(conn):
-    row = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'tickets'").fetchone()
-    if row is None:
-        return False
-    columns = {r["name"] for r in conn.execute("PRAGMA table_info(tickets)")}
-    return not (
-        {"idea", "created_by", "assignee", "completed_at"} <= columns
-        and all(f"'{status}'" in row["sql"] for status in STATUSES)
-    )
-
-
-def migrate(db_path):
-    """Create the tickets table, or bring an older one up to date.
-
-    SQLite can't change a CHECK constraint in place, so a table that predates the
-    current schema is rebuilt. This runs in one transaction, so a failure leaves the
-    old table untouched. Tickets already done get updated_at as their completion time,
-    the closest record available.
-    """
-    with transaction(db_path) as conn:
-        conn.execute(NOTES_TABLE)
-        conn.execute("CREATE INDEX IF NOT EXISTS notes_ticket ON notes (ticket_id)")
-        conn.execute(DEPENDENCIES_TABLE)
-        conn.execute(HISTORY_TABLE)
-        conn.execute(AGENT_SESSIONS_TABLE)
-        conn.execute("CREATE INDEX IF NOT EXISTS agent_parent ON agent_sessions (parent_key)")
-        agent_columns = {r["name"] for r in conn.execute("PRAGMA table_info(agent_sessions)")}
-        if "state_ts" not in agent_columns:
-            conn.execute("ALTER TABLE agent_sessions ADD COLUMN state_ts REAL")
-        # Rows for Claude Code's internal helpers, recorded before they were ignored.
-        conn.execute(
-            "DELETE FROM agent_sessions WHERE parent_key IS NOT NULL AND agent_type IS NULL"
-        )
-        conn.execute("CREATE INDEX IF NOT EXISTS history_ticket ON history (ticket_id)")
-        row = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'tickets'").fetchone()
-        if row is None:
-            conn.execute(TICKETS_TABLE.format(name="tickets"))
-            return
-        if not tickets_table_outdated(conn):
-            return
-
-        columns = ", ".join(r["name"] for r in conn.execute("PRAGMA table_info(tickets)"))
-        # Keep the ID counter, so IDs of deleted tickets are never reused.
-        counter = conn.execute("SELECT seq FROM sqlite_sequence WHERE name = 'tickets'").fetchone()
-        conn.execute(TICKETS_TABLE.format(name="tickets_new"))
-        conn.execute(f"INSERT INTO tickets_new ({columns}) SELECT {columns} FROM tickets")
-        conn.execute("DROP TABLE tickets")
-        conn.execute("ALTER TABLE tickets_new RENAME TO tickets")
-        conn.execute(
-            "UPDATE tickets SET completed_at = updated_at"
-            " WHERE status = 'done' AND completed_at IS NULL"
-        )
-        conn.execute("DELETE FROM sqlite_sequence WHERE name = 'tickets'")
-        if counter:
-            conn.execute(
-                "INSERT INTO sqlite_sequence (name, seq) VALUES ('tickets', ?)", (counter["seq"],)
+class Database:
+    def __init__(self, target):
+        self.url = database_url(target)
+        if self.url.get_backend_name() == "sqlite":
+            self.engine = sa.create_engine(self.url, connect_args={"timeout": 10})
+            sa.event.listen(self.engine, "connect", _sqlite_connect)
+            sa.event.listen(self.engine, "begin", _sqlite_begin)
+        else:
+            self.engine = sa.create_engine(
+                self.url,
+                # Hosted databases drop idle connections, and transaction-mode poolers
+                # such as Supabase's port 6543 can't keep prepared statements.
+                pool_pre_ping=True,
+                pool_recycle=300,
+                pool_size=5,
+                max_overflow=5,
+                connect_args={"prepare_threshold": None},
             )
 
+    @property
+    def is_sqlite(self):
+        return self.engine.dialect.name == "sqlite"
 
-def backup_database(db_path, backup_dir, keep=BACKUPS_KEPT, force=False):
-    """Copy the database into backup_dir, unless it's unchanged since the last copy."""
-    db = Path(db_path)
-    if not db.exists():
-        return None
-    backup_dir = Path(backup_dir)
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    pattern = f"{db.stem}-*.db"
-    existing = sorted(backup_dir.glob(pattern))
-    if not force and existing and existing[-1].stat().st_mtime >= db.stat().st_mtime:
-        return None
+    @property
+    def path(self):
+        """The file of a SQLite database, otherwise None."""
+        return Path(self.url.database) if self.is_sqlite and self.url.database else None
 
-    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    target = backup_dir / f"{db.stem}-{stamp}.db"
-    source, copy = connect(db), sqlite3.connect(target)
-    try:
-        source.backup(copy)
-    finally:
-        source.close()
-        copy.close()
-    for old in sorted(backup_dir.glob(pattern))[:-keep]:
-        old.unlink()
-    return target
+    def __str__(self):
+        return str(self.path) if self.path else self.url.render_as_string(hide_password=True)
+
+    def close(self):
+        self.engine.dispose()
+
+    @contextmanager
+    def connect(self):
+        """A connection for reads."""
+        with self.engine.connect() as connection:
+            yield Conn(connection)
+
+    @contextmanager
+    def transaction(self):
+        """A transaction that holds the write lock, so concurrent agents can't interleave
+        changes such as column renumbering."""
+        connection = self.engine.connect().execution_options(kanbot_write=True)
+        with connection, connection.begin():
+            if not self.is_sqlite:
+                connection.execute(
+                    sa.text("SELECT pg_advisory_xact_lock(:key)"), {"key": WRITE_LOCK}
+                )
+            yield Conn(connection)
+
+    def alembic_config(self, connection=None):
+        config = Config()
+        config.set_main_option("script_location", str(resources.files("kanbot") / "migrations"))
+        config.attributes["connection"] = connection
+        return config
+
+    def revisions(self):
+        """The current and latest revisions. Current is None for a new database, and
+        "legacy" for a SQLite file from before Alembic."""
+        head = ScriptDirectory.from_config(self.alembic_config()).get_current_head()
+        with self.engine.connect() as connection:
+            current = MigrationContext.configure(connection).get_current_revision()
+            if current is None and self.is_sqlite and sa.inspect(connection).has_table("tickets"):
+                current = "legacy"
+        return current, head
+
+    def check_schema(self):
+        """For servers that leave migrations to CI: raise if the schema is behind this
+        version of Kanbot. Return a warning if it's ahead, or None if it matches."""
+        current, head = self.revisions()
+        if current == head:
+            return None
+        script = ScriptDirectory.from_config(self.alembic_config())
+        known = current not in (None, "legacy") and current in {
+            r.revision for r in script.walk_revisions()
+        }
+        if current in (None, "legacy") or known:
+            raise RuntimeError(
+                f"{self} is at revision {current or 'none'}, but this Kanbot needs {head}."
+                " Run kanbot migrate, or start without --no-migrate."
+            )
+        return f"{self} is at revision {current}, newer than this Kanbot ({head}); carrying on."
+
+    def needs_upgrade(self):
+        current, head = self.revisions()
+        return current != head
+
+    def upgrade(self):
+        """Bring the schema up to date. Safe to run every start, and by several servers
+        at once on Postgres, where the write lock makes them take turns."""
+        if self.revisions()[0] == "legacy":
+            legacy.upgrade(self.path)
+            with self.transaction() as conn:
+                command.stamp(self.alembic_config(conn.connection), BASELINE)
+        with self.transaction() as conn:
+            command.upgrade(self.alembic_config(conn.connection), "head")
+
+    def backup(self, backup_dir, keep=BACKUPS_KEPT, force=False):
+        """Copy a SQLite database into backup_dir, unless it's unchanged since the last
+        copy. Postgres databases are backed up by their host, so this returns None."""
+        db = self.path
+        if db is None or not db.exists():
+            return None
+        backup_dir = Path(backup_dir)
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        pattern = f"{db.stem}-*.db"
+        existing = sorted(backup_dir.glob(pattern))
+        if not force and existing and existing[-1].stat().st_mtime >= db.stat().st_mtime:
+            return None
+
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+        target = backup_dir / f"{db.stem}-{stamp}.db"
+        source, copy = sqlite3.connect(db, timeout=10), sqlite3.connect(target)
+        try:
+            source.backup(copy)
+        finally:
+            source.close()
+            copy.close()
+        for old in sorted(backup_dir.glob(pattern))[:-keep]:
+            old.unlink()
+        return target
+
+
+def _sqlite_connect(dbapi_connection, _record):
+    # Let the begin listener issue BEGIN itself, instead of the sqlite3 module.
+    dbapi_connection.isolation_level = None
+
+
+def _sqlite_begin(connection):
+    write = connection.get_execution_options().get("kanbot_write")
+    connection.exec_driver_sql("BEGIN IMMEDIATE" if write else "BEGIN")

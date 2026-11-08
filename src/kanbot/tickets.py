@@ -4,14 +4,7 @@ import re
 from urllib.parse import parse_qs
 
 from kanbot.api_docs import API_DOCS
-from kanbot.db import (
-    PRIORITIES,
-    RESOLVED_STATUSES,
-    STATUSES,
-    connect,
-    now,
-    transaction,
-)
+from kanbot.db import PRIORITIES, RESOLVED_STATUSES, STATUSES, now
 from kanbot.errors import ApiError
 
 MAX_ID = 2**63 - 1
@@ -86,9 +79,11 @@ def place(conn, ticket_id, status, priority, position=None):
     priority, so urgent work surfaces while manual ordering is respected.
     """
     others = conn.execute(
-        "SELECT id, priority FROM tickets WHERE status = ? AND id != ? ORDER BY position, id",
-        (status, ticket_id),
+        "SELECT id, priority, position FROM tickets"
+        " WHERE status = :status AND id != :id ORDER BY position, id",
+        {"status": status, "id": ticket_id},
     ).fetchall()
+    current = {row["id"]: row["position"] for row in others}
     if position is None:
         rank = PRIORITIES.index(priority)
         index = next(
@@ -99,9 +94,14 @@ def place(conn, ticket_id, status, priority, position=None):
         index = min(position, len(others))
     ordered = [row["id"] for row in others]
     ordered.insert(index, ticket_id)
+    # Only write rows that move, which saves round trips to a remote database.
     conn.executemany(
-        "UPDATE tickets SET position = ? WHERE id = ?",
-        [(i, tid) for i, tid in enumerate(ordered)],
+        "UPDATE tickets SET position = :position WHERE id = :id",
+        [
+            {"position": i, "id": tid}
+            for i, tid in enumerate(ordered)
+            if tid == ticket_id or current[tid] != i
+        ],
     )
 
 
@@ -128,7 +128,7 @@ def attach_dependencies(conn, tickets):
 
 
 def fetch_ticket(conn, ticket_id):
-    row = conn.execute(f"{SELECT_TICKET} WHERE id = ?", (ticket_id,)).fetchone()
+    row = conn.execute(f"{SELECT_TICKET} WHERE id = :id", {"id": ticket_id}).fetchone()
     if row is None:
         raise ApiError(404, f"Ticket {ticket_id} not found.")
     ticket = ticket_json(row)
@@ -141,7 +141,7 @@ def set_dependencies(conn, ticket_id, depends_on):
     if ticket_id in depends_on:
         raise ApiError(400, "A ticket can't depend on itself.")
     for other in depends_on:
-        if not conn.execute("SELECT 1 FROM tickets WHERE id = ?", (other,)).fetchone():
+        if not conn.execute("SELECT 1 FROM tickets WHERE id = :id", {"id": other}).fetchone():
             raise ApiError(400, f"depends_on refers to ticket {other}, which doesn't exist.")
 
     edges = {}
@@ -160,10 +160,10 @@ def set_dependencies(conn, ticket_id, depends_on):
                 seen.add(current)
                 stack.extend(edges.get(current, []))
 
-    conn.execute("DELETE FROM dependencies WHERE ticket_id = ?", (ticket_id,))
+    conn.execute("DELETE FROM dependencies WHERE ticket_id = :id", {"id": ticket_id})
     conn.executemany(
-        "INSERT INTO dependencies (ticket_id, depends_on) VALUES (?, ?)",
-        [(ticket_id, other) for other in depends_on],
+        "INSERT INTO dependencies (ticket_id, depends_on) VALUES (:ticket_id, :depends_on)",
+        [{"ticket_id": ticket_id, "depends_on": other} for other in depends_on],
     )
 
 
@@ -177,42 +177,49 @@ def record_history(conn, ticket_id, actor, field, old, new, at):
 
     conn.execute(
         "INSERT INTO history (ticket_id, actor, field, old_value, new_value, at)"
-        " VALUES (?, ?, ?, ?, ?, ?)",
-        (ticket_id, actor, field, text(old), text(new), at),
+        " VALUES (:ticket_id, :actor, :field, :old, :new, :at)",
+        {
+            "ticket_id": ticket_id,
+            "actor": actor,
+            "field": field,
+            "old": text(old),
+            "new": text(new),
+            "at": at,
+        },
     )
 
 
-def create_ticket(db_path, body):
+def create_ticket(db, body):
     fields = validate(body, creating=True)
     status = fields.get("status", "follow_up")
     priority = fields.get("priority", "medium")
     stamp = now()
-    with transaction(db_path) as conn:
-        ticket_id = conn.execute(
+    with db.transaction() as conn:
+        ticket_id = conn.scalar(
             "INSERT INTO tickets (title, description, status, priority, project, idea,"
             " created_by, assignee, created_at, updated_at, completed_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                fields["title"],
-                fields.get("description", ""),
-                status,
-                priority,
-                fields.get("project"),
-                fields.get("idea", False),
-                fields.get("created_by"),
-                fields.get("assignee"),
-                stamp,
-                stamp,
-                stamp if status == "done" else None,
-            ),
-        ).lastrowid
+            " VALUES (:title, :description, :status, :priority, :project, :idea,"
+            " :created_by, :assignee, :stamp, :stamp, :completed_at) RETURNING id",
+            {
+                "title": fields["title"],
+                "description": fields.get("description", ""),
+                "status": status,
+                "priority": priority,
+                "project": fields.get("project"),
+                "idea": fields.get("idea", False),
+                "created_by": fields.get("created_by"),
+                "assignee": fields.get("assignee"),
+                "stamp": stamp,
+                "completed_at": stamp if status == "done" else None,
+            },
+        )
         place(conn, ticket_id, status, priority, fields.get("position"))
         set_dependencies(conn, ticket_id, fields.get("depends_on", []))
         record_history(conn, ticket_id, fields.get("created_by"), "created", None, None, stamp)
         return fetch_ticket(conn, ticket_id)
 
 
-def update_ticket(db_path, ticket_id, body):
+def update_ticket(db, ticket_id, body):
     actor = None
     if isinstance(body, dict) and "actor" in body:
         body = dict(body)
@@ -223,7 +230,7 @@ def update_ticket(db_path, ticket_id, body):
     fields = validate(body, creating=False)
     if not fields:
         raise ApiError(400, "No fields to update.")
-    with transaction(db_path) as conn:
+    with db.transaction() as conn:
         current = fetch_ticket(conn, ticket_id)
         position = fields.pop("position", None)
         depends_on = fields.pop("depends_on", None)
@@ -235,10 +242,11 @@ def update_ticket(db_path, ticket_id, body):
         fields["updated_at"] = now()
         if status != current["status"]:
             fields["completed_at"] = fields["updated_at"] if status == "done" else None
-        assignments = ", ".join(f"{name} = ?" for name in fields)
+        # Column names come from validate(), never from the request.
+        assignments = ", ".join(f"{name} = :{name}" for name in fields)
         conn.execute(
-            f"UPDATE tickets SET {assignments} WHERE id = ?",
-            (*fields.values(), ticket_id),
+            f"UPDATE tickets SET {assignments} WHERE id = :ticket_id",
+            {**fields, "ticket_id": ticket_id},
         )
         if moved:
             place(conn, ticket_id, status, priority, position)
@@ -261,19 +269,19 @@ def update_ticket(db_path, ticket_id, body):
         return fetch_ticket(conn, ticket_id)
 
 
-def claim_ticket(db_path, ticket_id, body):
+def claim_ticket(db, ticket_id, body):
     assignee = body.get("assignee") if isinstance(body, dict) else None
     if not isinstance(assignee, str) or not normalize_name(assignee):
         raise ApiError(400, "assignee must be a non-empty string.")
     assignee = normalize_name(assignee)
-    with transaction(db_path) as conn:
+    with db.transaction() as conn:
         current = fetch_ticket(conn, ticket_id)
         if current["assignee"] not in (None, assignee):
             raise ApiError(409, f"Ticket {ticket_id} is already assigned to {current['assignee']}.")
         stamp = now()
         conn.execute(
-            "UPDATE tickets SET assignee = ?, updated_at = ? WHERE id = ?",
-            (assignee, stamp, ticket_id),
+            "UPDATE tickets SET assignee = :assignee, updated_at = :stamp WHERE id = :id",
+            {"assignee": assignee, "stamp": stamp, "id": ticket_id},
         )
         if current["assignee"] != assignee:
             record_history(
@@ -282,7 +290,7 @@ def claim_ticket(db_path, ticket_id, body):
         return fetch_ticket(conn, ticket_id)
 
 
-def add_note(db_path, ticket_id, body):
+def add_note(db, ticket_id, body):
     if not isinstance(body, dict):
         raise ApiError(400, "Request body must be a JSON object.")
     unknown = set(body) - {"body", "author"}
@@ -294,29 +302,38 @@ def add_note(db_path, ticket_id, body):
     if author is not None and not isinstance(author, str):
         raise ApiError(400, "author must be a string or null.")
     stamp = now()
-    with transaction(db_path) as conn:
+    with db.transaction() as conn:
         fetch_ticket(conn, ticket_id)
-        note_id = conn.execute(
-            "INSERT INTO notes (ticket_id, author, body, created_at) VALUES (?, ?, ?, ?)",
-            (ticket_id, normalize_name(author) if author else None, text.strip(), stamp),
-        ).lastrowid
-        conn.execute("UPDATE tickets SET updated_at = ? WHERE id = ?", (stamp, ticket_id))
-        return dict(conn.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone())
-
-
-def delete_ticket(db_path, ticket_id):
-    with transaction(db_path) as conn:
-        fetch_ticket(conn, ticket_id)
-        conn.execute("DELETE FROM notes WHERE ticket_id = ?", (ticket_id,))
-        conn.execute("DELETE FROM history WHERE ticket_id = ?", (ticket_id,))
+        note = conn.execute(
+            "INSERT INTO notes (ticket_id, author, body, created_at)"
+            " VALUES (:ticket_id, :author, :body, :stamp)"
+            " RETURNING id, ticket_id, author, body, created_at",
+            {
+                "ticket_id": ticket_id,
+                "author": normalize_name(author) if author else None,
+                "body": text.strip(),
+                "stamp": stamp,
+            },
+        ).one()
         conn.execute(
-            "DELETE FROM dependencies WHERE ticket_id = ? OR depends_on = ?", (ticket_id, ticket_id)
+            "UPDATE tickets SET updated_at = :stamp WHERE id = :id",
+            {"stamp": stamp, "id": ticket_id},
         )
-        conn.execute("DELETE FROM tickets WHERE id = ?", (ticket_id,))
+        return dict(note)
+
+
+def delete_ticket(db, ticket_id):
+    with db.transaction() as conn:
+        fetch_ticket(conn, ticket_id)
+        ids = {"id": ticket_id}
+        conn.execute("DELETE FROM notes WHERE ticket_id = :id", ids)
+        conn.execute("DELETE FROM history WHERE ticket_id = :id", ids)
+        conn.execute("DELETE FROM dependencies WHERE ticket_id = :id OR depends_on = :id", ids)
+        conn.execute("DELETE FROM tickets WHERE id = :id", ids)
     return {"deleted": ticket_id}
 
 
-def list_tickets(db_path, query):
+def list_tickets(db, query):
     params = {key: values[-1] for key, values in parse_qs(query, keep_blank_values=True).items()}
     unknown = set(params) - {
         "status",
@@ -331,36 +348,35 @@ def list_tickets(db_path, query):
     if unknown:
         raise ApiError(400, f"Unknown query parameters: {', '.join(sorted(unknown))}.")
 
-    where, args = [], []
+    where, args = [], {}
     for name, allowed in (("status", STATUSES), ("priority", PRIORITIES)):
         if name in params:
             if params[name] not in allowed:
                 raise ApiError(400, f"{name} must be one of: {', '.join(allowed)}.")
-            where.append(f"{name} = ?")
-            args.append(params[name])
+            where.append(f"{name} = :{name}")
+            args[name] = params[name]
     for name in ("project", "assignee", "created_by"):
         if name in params:
-            where.append(f"{name} IS ?")
-            args.append(normalize_name(params[name]))
+            where.append(f"{name} IS NOT DISTINCT FROM :{name}")
+            args[name] = normalize_name(params[name])
     if "idea" in params:
         if params["idea"] not in ("true", "false"):
             raise ApiError(400, "idea must be true or false.")
-        where.append("idea = ?")
-        args.append(params["idea"] == "true")
+        where.append("idea = :idea")
+        args["idea"] = params["idea"] == "true"
     if "q" in params:
         escaped = re.sub(r"([\\%_])", r"\\\1", params["q"])
-        where.append(r"(title LIKE ? ESCAPE '\' OR description LIKE ? ESCAPE '\')")
-        args += [f"%{escaped}%"] * 2
+        # lower() on both sides: LIKE ignores case in SQLite but not in Postgres.
+        like = r"LIKE lower(:q) ESCAPE '\'"
+        where.append(f"(lower(title) {like} OR lower(description) {like})")
+        args["q"] = f"%{escaped}%"
 
     sql = SELECT_TICKET
     if where:
         sql += " WHERE " + " AND ".join(where)
-    conn = connect(db_path)
-    try:
+    with db.connect() as conn:
         rows = [ticket_json(row) for row in conn.execute(sql, args)]
         attach_dependencies(conn, rows)
-    finally:
-        conn.close()
     if "ready" in params:
         if params["ready"] not in ("true", "false"):
             raise ApiError(400, "ready must be true or false.")
@@ -370,34 +386,28 @@ def list_tickets(db_path, query):
     return rows
 
 
-def get_ticket(db_path, ticket_id):
-    conn = connect(db_path)
-    try:
+def get_ticket(db, ticket_id):
+    with db.connect() as conn:
         ticket = fetch_ticket(conn, ticket_id)
         notes = conn.execute(
-            "SELECT * FROM notes WHERE ticket_id = ? ORDER BY id", (ticket_id,)
+            "SELECT * FROM notes WHERE ticket_id = :id ORDER BY id", {"id": ticket_id}
         ).fetchall()
         history = conn.execute(
             "SELECT actor, field, old_value, new_value, at FROM history"
-            " WHERE ticket_id = ? ORDER BY id DESC",
-            (ticket_id,),
+            " WHERE ticket_id = :id ORDER BY id DESC",
+            {"id": ticket_id},
         ).fetchall()
-        return {
-            **ticket,
-            "notes": [dict(row) for row in notes],
-            "history": [dict(row) for row in history],
-        }
-    finally:
-        conn.close()
+    return {
+        **ticket,
+        "notes": [dict(row) for row in notes],
+        "history": [dict(row) for row in history],
+    }
 
 
-def list_projects(db_path):
-    conn = connect(db_path)
-    try:
+def list_projects(db):
+    with db.connect() as conn:
         rows = conn.execute(
             "SELECT project AS name, COUNT(*) AS tickets FROM tickets"
             " WHERE project IS NOT NULL GROUP BY project ORDER BY project"
         ).fetchall()
-    finally:
-        conn.close()
     return [dict(row) for row in rows]

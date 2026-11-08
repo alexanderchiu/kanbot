@@ -4,7 +4,7 @@ import statistics
 from datetime import datetime
 from urllib.parse import parse_qs
 
-from kanbot.db import RESOLVED_STATUSES, STATUSES, connect
+from kanbot.db import RESOLVED_STATUSES, STATUSES
 from kanbot.errors import ApiError
 from kanbot.tickets import normalize_name
 
@@ -39,7 +39,7 @@ def summarize(rows):
     }
 
 
-def ticket_stats(db_path, query):
+def ticket_stats(db, query):
     params = {key: values[-1] for key, values in parse_qs(query, keep_blank_values=True).items()}
     unknown = set(params) - {"project"}
     if unknown:
@@ -48,15 +48,12 @@ def ticket_stats(db_path, query):
         "SELECT status, priority, project, created_by, assignee, created_at, completed_at"
         " FROM tickets"
     )
-    args = []
+    args = {}
     if "project" in params:
-        sql += " WHERE project IS ?"
-        args.append(normalize_name(params["project"]))
-    conn = connect(db_path)
-    try:
+        sql += " WHERE project IS NOT DISTINCT FROM :project"
+        args["project"] = normalize_name(params["project"])
+    with db.connect() as conn:
         tickets = conn.execute(sql, args).fetchall()
-    finally:
-        conn.close()
 
     def triple(t):
         return (t["status"], t["created_at"], t["completed_at"])

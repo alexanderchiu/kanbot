@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from kanbot.db import backup_database
+from kanbot.db import Database
 from kanbot.web import make_server
 
 
@@ -19,6 +19,13 @@ class BackupTest(unittest.TestCase):
         self.db = Path(self.tmp.name) / "board.db"
         self.backups = Path(self.tmp.name) / "backups"
 
+    def backup(self, **options):
+        db = Database(self.db)
+        try:
+            return db.backup(self.backups, **options)
+        finally:
+            db.close()
+
     def write(self, value):
         conn = sqlite3.connect(self.db)
         conn.execute("CREATE TABLE IF NOT EXISTS t (v)")
@@ -27,17 +34,17 @@ class BackupTest(unittest.TestCase):
         conn.close()
 
     def test_no_database_means_no_backup(self):
-        self.assertIsNone(backup_database(self.db, self.backups))
+        self.assertIsNone(self.backup())
 
     def test_copies_data_and_skips_unchanged_database(self):
         self.write("a")
-        target = backup_database(self.db, self.backups)
+        target = self.backup()
         conn = sqlite3.connect(target)
         self.assertEqual(conn.execute("SELECT v FROM t").fetchall(), [("a",)])
         conn.close()
-        self.assertIsNone(backup_database(self.db, self.backups))
+        self.assertIsNone(self.backup())
         os.utime(self.db, (target.stat().st_mtime + 5,) * 2)
-        self.assertIsNotNone(backup_database(self.db, self.backups))
+        self.assertIsNotNone(self.backup())
 
     def test_keeps_only_newest_and_ignores_other_files(self):
         self.write("a")
@@ -46,7 +53,7 @@ class BackupTest(unittest.TestCase):
         for day in (1, 2, 3):
             (self.backups / f"board-2020010{day}-000000.db").touch()
             os.utime(self.backups / f"board-2020010{day}-000000.db", (1, 1))
-        newest = backup_database(self.db, self.backups, keep=2)
+        newest = self.backup(keep=2)
         names = sorted(path.name for path in self.backups.iterdir())
         self.assertEqual(names, ["board-20200103-000000.db", newest.name, "notes.txt"])
 

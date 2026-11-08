@@ -1,0 +1,163 @@
+"""Upgrades for SQLite files made before Kanbot used Alembic.
+
+Those files have no alembic_version table. They're brought up to the schema of the
+baseline migration here, then stamped with it, so Alembic handles every later change.
+Don't add to this module: write an Alembic migration instead.
+"""
+
+import sqlite3
+from contextlib import contextmanager
+
+from kanbot.schema import STATUSES
+
+TICKETS_TABLE = """
+CREATE TABLE {name} (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL CHECK (status IN ('follow_up', 'in_progress', 'blocked', 'done', 'cancelled')),
+    priority    TEXT NOT NULL CHECK (priority IN ('high', 'medium', 'low')),
+    project     TEXT,
+    idea        INTEGER NOT NULL DEFAULT 0,
+    created_by  TEXT,
+    assignee    TEXT,
+    position    INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    completed_at TEXT
+);
+"""  # noqa: E501
+
+AGENT_SESSIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS agent_sessions (
+    key                   TEXT PRIMARY KEY,
+    session_id            TEXT NOT NULL,
+    agent_id              TEXT,
+    agent_type            TEXT,
+    parent_key            TEXT,
+    model                 TEXT,
+    cwd                   TEXT,
+    project               TEXT,
+    state                 TEXT NOT NULL,
+    state_detail          TEXT,
+    state_since           TEXT NOT NULL,
+    started_at            TEXT NOT NULL,
+    last_event_at         TEXT NOT NULL,
+    ended_at              TEXT,
+    working_since         TEXT,
+    working_seconds       REAL NOT NULL DEFAULT 0,
+    turns                 INTEGER NOT NULL DEFAULT 0,
+    tool_calls            INTEGER NOT NULL DEFAULT 0,
+    last_tool             TEXT,
+    input_tokens          INTEGER NOT NULL DEFAULT 0,
+    output_tokens         INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+    ticket_id             INTEGER,
+    state_ts              REAL
+);
+"""
+
+NOTES_TABLE = """
+CREATE TABLE IF NOT EXISTS notes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id  INTEGER NOT NULL,
+    author     TEXT,
+    body       TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+"""
+
+HISTORY_TABLE = """
+CREATE TABLE IF NOT EXISTS history (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id INTEGER NOT NULL,
+    actor     TEXT,
+    field     TEXT NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    at        TEXT NOT NULL
+);
+"""
+DEPENDENCIES_TABLE = """
+CREATE TABLE IF NOT EXISTS dependencies (
+    ticket_id  INTEGER NOT NULL,
+    depends_on INTEGER NOT NULL,
+    PRIMARY KEY (ticket_id, depends_on)
+);
+"""
+
+
+@contextmanager
+def transaction(db_path):
+    conn = sqlite3.connect(db_path, timeout=10, isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        yield conn
+        conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+    finally:
+        conn.close()
+
+
+def tickets_table_outdated(conn):
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'tickets'").fetchone()
+    if row is None:
+        return False
+    columns = {r["name"] for r in conn.execute("PRAGMA table_info(tickets)")}
+    return not (
+        {"idea", "created_by", "assignee", "completed_at"} <= columns
+        and all(f"'{status}'" in row["sql"] for status in STATUSES)
+    )
+
+
+def upgrade(db_path):
+    """Create the tickets table, or bring an older one up to date.
+
+    SQLite can't change a CHECK constraint in place, so a table that predates the
+    current schema is rebuilt. This runs in one transaction, so a failure leaves the
+    old table untouched. Tickets already done get updated_at as their completion time,
+    the closest record available.
+    """
+    with transaction(db_path) as conn:
+        conn.execute(NOTES_TABLE)
+        conn.execute("CREATE INDEX IF NOT EXISTS notes_ticket ON notes (ticket_id)")
+        conn.execute(DEPENDENCIES_TABLE)
+        conn.execute(HISTORY_TABLE)
+        conn.execute(AGENT_SESSIONS_TABLE)
+        conn.execute("CREATE INDEX IF NOT EXISTS agent_parent ON agent_sessions (parent_key)")
+        agent_columns = {r["name"] for r in conn.execute("PRAGMA table_info(agent_sessions)")}
+        if "state_ts" not in agent_columns:
+            conn.execute("ALTER TABLE agent_sessions ADD COLUMN state_ts REAL")
+        # Rows for Claude Code's internal helpers, recorded before they were ignored.
+        conn.execute(
+            "DELETE FROM agent_sessions WHERE parent_key IS NOT NULL AND agent_type IS NULL"
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS history_ticket ON history (ticket_id)")
+        row = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'tickets'").fetchone()
+        if row is None:
+            conn.execute(TICKETS_TABLE.format(name="tickets"))
+            return
+        if not tickets_table_outdated(conn):
+            return
+
+        columns = ", ".join(r["name"] for r in conn.execute("PRAGMA table_info(tickets)"))
+        # Keep the ID counter, so IDs of deleted tickets are never reused.
+        counter = conn.execute("SELECT seq FROM sqlite_sequence WHERE name = 'tickets'").fetchone()
+        conn.execute(TICKETS_TABLE.format(name="tickets_new"))
+        conn.execute(f"INSERT INTO tickets_new ({columns}) SELECT {columns} FROM tickets")
+        conn.execute("DROP TABLE tickets")
+        conn.execute("ALTER TABLE tickets_new RENAME TO tickets")
+        conn.execute(
+            "UPDATE tickets SET completed_at = updated_at"
+            " WHERE status = 'done' AND completed_at IS NULL"
+        )
+        conn.execute("DELETE FROM sqlite_sequence WHERE name = 'tickets'")
+        if counter:
+            conn.execute(
+                "INSERT INTO sqlite_sequence (name, seq) VALUES ('tickets', ?)", (counter["seq"],)
+            )

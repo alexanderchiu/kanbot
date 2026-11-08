@@ -9,7 +9,7 @@ import re
 from datetime import UTC, datetime
 from pathlib import PurePath
 
-from kanbot.db import connect, now, transaction
+from kanbot.db import now
 from kanbot.errors import ApiError
 
 # What a session is doing, from the user's point of view.
@@ -56,7 +56,7 @@ def text(value, limit=DETAIL_LIMIT):
     return value[:limit] if isinstance(value, str) and value else None
 
 
-def record_event(db_path, event):
+def record_event(db, event):
     """Update a session from one hook event. Unknown events are accepted and ignored."""
     if not isinstance(event, dict):
         raise ApiError(400, "Request body must be a JSON object.")
@@ -77,7 +77,7 @@ def record_event(db_path, event):
     # change older than the last one applied must not override it.
     fired = event.get("kanbot_ts")
     fired = float(fired) if type(fired) in (int, float) and fired > 0 else None
-    with transaction(db_path) as conn:
+    with db.transaction() as conn:
         if agent_id:
             ensure_session(conn, session_id, session_id, None, event, stamp)
         session = ensure_session(conn, key, session_id, agent_id, event, stamp)
@@ -135,44 +135,46 @@ def record_event(db_path, event):
             changes["state_detail"] = detail
             if fired is not None:
                 changes["state_ts"] = fired
-        assignments = ", ".join(f"{column} = ?" for column in changes)
+        # Column names are fixed above, never taken from the event.
+        assignments = ", ".join(f"{column} = :{column}" for column in changes)
         conn.execute(
-            f"UPDATE agent_sessions SET {assignments} WHERE key = ?", (*changes.values(), key)
+            f"UPDATE agent_sessions SET {assignments} WHERE key = :session_key",
+            {**changes, "session_key": key},
         )
         if name == "SessionEnd":
             # Subagents can't outlive their session.
             conn.execute(
-                "UPDATE agent_sessions SET state = ?, ended_at = ?, working_since = NULL"
-                " WHERE parent_key = ? AND state != ?",
-                (ENDED, stamp, session_id, ENDED),
+                "UPDATE agent_sessions SET state = :ended, ended_at = :stamp, working_since = NULL"
+                " WHERE parent_key = :parent AND state != :ended",
+                {"ended": ENDED, "stamp": stamp, "parent": session_id},
             )
     return {"ok": True}
 
 
 def ensure_session(conn, key, session_id, agent_id, event, stamp):
-    row = conn.execute("SELECT * FROM agent_sessions WHERE key = ?", (key,)).fetchone()
+    select = "SELECT * FROM agent_sessions WHERE key = :key"
+    row = conn.execute(select, {"key": key}).fetchone()
     if row:
         return dict(row)
     cwd = event.get("cwd") if isinstance(event.get("cwd"), str) else None
     conn.execute(
         "INSERT INTO agent_sessions (key, session_id, agent_id, agent_type, parent_key, cwd,"
         " project, state, state_since, started_at, last_event_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            key,
-            session_id,
-            agent_id,
-            text(event.get("agent_type"), 80) if agent_id else None,
-            session_id if agent_id else None,
-            text(cwd, 500),
-            PurePath(cwd).name.lower() if cwd else None,
-            IDLE,
-            stamp,
-            stamp,
-            stamp,
-        ),
+        " VALUES (:key, :session_id, :agent_id, :agent_type, :parent_key, :cwd,"
+        " :project, :state, :stamp, :stamp, :stamp)",
+        {
+            "key": key,
+            "session_id": session_id,
+            "agent_id": agent_id,
+            "agent_type": text(event.get("agent_type"), 80) if agent_id else None,
+            "parent_key": session_id if agent_id else None,
+            "cwd": text(cwd, 500),
+            "project": PurePath(cwd).name.lower() if cwd else None,
+            "state": IDLE,
+            "stamp": stamp,
+        },
     )
-    return dict(conn.execute("SELECT * FROM agent_sessions WHERE key = ?", (key,)).fetchone())
+    return dict(conn.execute(select, {"key": key}).one())
 
 
 def transition(session, state, stamp):
@@ -206,10 +208,9 @@ def session_json(row, stamp, tickets):
     return session
 
 
-def list_agents(db_path, include_ended=False):
+def list_agents(db, include_ended=False):
     stamp = now()
-    conn = connect(db_path)
-    try:
+    with db.connect() as conn:
         rows = conn.execute("SELECT * FROM agent_sessions ORDER BY started_at DESC").fetchall()
         tickets = {
             row["id"]: dict(row)
@@ -218,8 +219,6 @@ def list_agents(db_path, include_ended=False):
                 " (SELECT ticket_id FROM agent_sessions WHERE ticket_id IS NOT NULL)"
             )
         }
-    finally:
-        conn.close()
 
     def visible(row):
         if include_ended:
@@ -238,11 +237,11 @@ def list_agents(db_path, include_ended=False):
     return sessions
 
 
-def delete_agent(db_path, session_id):
-    with transaction(db_path) as conn:
-        deleted = conn.execute(
-            "DELETE FROM agent_sessions WHERE key = ? OR parent_key = ?", (session_id, session_id)
-        ).rowcount
+def delete_agent(db, session_id):
+    with db.transaction() as conn:
+        deleted = conn.rowcount(
+            "DELETE FROM agent_sessions WHERE key = :key OR parent_key = :key", {"key": session_id}
+        )
     if not deleted:
         raise ApiError(404, f"Session {session_id} not found.")
     return {"deleted": session_id}
