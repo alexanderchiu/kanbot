@@ -81,6 +81,7 @@ class StaticRouteTest(unittest.TestCase):
 
     def test_serves_each_allowed_type_with_its_content_type(self):
         for path, content_type in [
+            ("/static/css/tokens.css", "text/css; charset=utf-8"),
             ("/static/icon.svg", "image/svg+xml"),
             ("/static/index.html", "text/html; charset=utf-8"),
         ]:

@@ -1,0 +1,25 @@
+/* Monokai, used sparingly: warm neutrals everywhere, its colours only as small signals. */
+:root {
+  color-scheme: dark;
+  --bg: #191a17;
+  --surface: #21221e;
+  --raised: #2a2b26;
+  --hover: #32332d;
+  --line: #2f302a;
+  --line-strong: #4a4b42;
+  --text: #f4f4ee;
+  --text-2: #bdbbaa;
+  --text-3: #9a9884;
+  --pink: #f92672;
+  --pink-text: #ff6b9f;
+  --orange: #fd971f;
+  --yellow: #e6db74;
+  --green: #a6e22e;
+  --blue: #66d9ef;
+  --purple: #ae81ff;
+  --on-accent: #191a17;
+  --radius: 8px;
+  --radius-sm: 6px;
+  --ease: 140ms cubic-bezier(0.2, 0, 0, 1);
+  --font: Inter, "SF Pro Text", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}

@@ -1,0 +1,83 @@
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 13px/1.45 var(--font);
+  -webkit-font-smoothing: antialiased;
+  scrollbar-color: var(--line-strong) transparent;
+  scrollbar-width: thin;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+a { color: var(--blue); text-decoration: none; overflow-wrap: anywhere; }
+a:hover { text-decoration: underline; }
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+[hidden] { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+kbd {
+  padding: 0 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* Controls */
+.control {
+  height: 30px;
+  padding: 0 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--ease), background var(--ease);
+}
+.control:hover { border-color: var(--line-strong); }
+select.control, .property select {
+  appearance: none;
+  padding-right: 26px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5 5 6.5 8 3.5' fill='none' stroke='%239a9884' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: right 9px center;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px;
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background var(--ease), border-color var(--ease);
+}
+.button:hover { background: var(--hover); }
+.button.primary { background: var(--green); border-color: var(--green); color: var(--on-accent); }
+.button.primary:hover { background: #b8ed4f; border-color: #b8ed4f; }
+.button.primary kbd { border-color: rgb(25 26 23 / 0.35); color: var(--on-accent); }
+.button.quiet { border-color: transparent; color: var(--text-2); }
+.button.quiet:hover { color: var(--text); }
+.button.danger { border-color: transparent; color: var(--pink-text); }
+.button.danger.armed { background: var(--pink); border-color: var(--pink); color: var(--on-accent); }
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-3);
+  transition: background var(--ease), color var(--ease), opacity var(--ease);
+}
+.icon-button:hover { background: var(--hover); color: var(--text); }
+svg { display: block; }
