@@ -463,7 +463,10 @@
   .stat-section { min-width: 0; }
   .stat-section h2 { margin: 0 0 6px 2px; font-size: 13px; font-weight: 600; }
   .table-scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); scrollbar-color: var(--line-strong) transparent; scrollbar-width: thin; }
-  .stat-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  /* Fixed columns, so the four tables line up whatever their content. */
+  .stat-table { width: 100%; min-width: 620px; table-layout: fixed; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .stat-table thead th:nth-child(1) { width: 28%; }
+  .stat-table thead th:nth-child(2) { width: 18%; }
   .stat-table th, .stat-table td { padding: 7px 12px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
   .stat-table tr:last-child td, .stat-table tr:last-child th { border-bottom: 0; }
   .stat-table thead th { color: var(--text-3); font-weight: 500; }
