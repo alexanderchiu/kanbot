@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#191a17">
 <title>Kanbot</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cg transform='rotate(-7 16 17)'%3E%3Cpath d='M16 9c0-3 3-2 3-5' fill='none' stroke='%23ae81ff' stroke-width='1.8' stroke-linecap='round'/%3E%3Ccircle cx='19.2' cy='3.4' r='2.4' fill='%23f92672'/%3E%3Crect x='2' y='15' width='3.5' height='7' rx='1.6' fill='%23ae81ff'/%3E%3Crect x='26.5' y='15' width='3.5' height='7' rx='1.6' fill='%23ae81ff'/%3E%3Crect x='4.5' y='8.5' width='23' height='20' rx='6.5' fill='%23a6e22e'/%3E%3Ccircle cx='11.5' cy='15' r='3.8' fill='%23191a17'/%3E%3Ccircle cx='12.6' cy='14' r='1.5' fill='%23f4f4ee'/%3E%3Ccircle cx='21' cy='14.6' r='2.7' fill='%23191a17'/%3E%3Ccircle cx='20.2' cy='15.3' r='1.1' fill='%2366d9ef'/%3E%3Crect x='8' y='20.3' width='16' height='6' rx='1.8' fill='%23191a17'/%3E%3Crect x='10' y='21.6' width='2.8' height='3.5' rx='.7' fill='%2366d9ef'/%3E%3Crect x='14.6' y='21.6' width='2.8' height='2.2' rx='.7' fill='%23fd971f'/%3E%3Crect x='19.2' y='21.6' width='2.8' height='3' rx='.7' fill='%23f92672'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23a6e22e'/%3E%3Crect x='7' y='8' width='4.5' height='16' rx='2.25' fill='%23191a17'/%3E%3Crect x='13.75' y='8' width='4.5' height='10' rx='2.25' fill='%23191a17'/%3E%3Crect x='20.5' y='8' width='4.5' height='13' rx='2.25' fill='%23191a17'/%3E%3C/svg%3E">
 <style>
   /* Monokai, used sparingly: warm neutrals everywhere, its colours only as small signals. */
   :root {
@@ -127,8 +127,7 @@
     padding: 12px 20px;
   }
   h1 { display: flex; align-items: center; gap: 8px; margin: 0 auto 0 0; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
-  .logo { flex: none; transition: transform var(--ease); }
-  h1:hover .logo { transform: rotate(14deg) scale(1.08); }
+  .logo { flex: none; }
   .search { position: relative; display: flex; align-items: center; }
   .search svg { position: absolute; left: 9px; color: var(--text-3); pointer-events: none; }
   .search kbd { position: absolute; right: 7px; pointer-events: none; }
@@ -454,19 +453,23 @@
   body[data-view="stats"] .search,
   body[data-view="stats"] .toggle { display: none; }
   #stats-view { flex: 1; min-height: 0; padding: 4px 20px 24px; overflow-y: auto; scrollbar-color: var(--line-strong) transparent; scrollbar-width: thin; }
-  .stats-body { max-width: 1200px; margin: 0 auto; display: grid; gap: 20px; }
+  .stats-body { max-width: 1200px; margin: 0 auto; display: grid; align-content: start; gap: 20px; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 0; }
   .tile { min-width: 0; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
   .tile dt { color: var(--text-3); }
   .tile dd { margin: 2px 0 0; font-size: 24px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-  .stat-tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 20px; align-items: start; }
+  .stat-tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 660px), 1fr)); gap: 20px; align-items: start; }
   .stat-section { min-width: 0; }
   .stat-section h2 { margin: 0 0 6px 2px; font-size: 13px; font-weight: 600; }
   .table-scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); scrollbar-color: var(--line-strong) transparent; scrollbar-width: thin; }
   /* Fixed columns, so the four tables line up whatever their content. */
-  .stat-table { width: 100%; min-width: 620px; table-layout: fixed; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-  .stat-table thead th:nth-child(1) { width: 28%; }
-  .stat-table thead th:nth-child(2) { width: 18%; }
+  .stat-table { width: 100%; min-width: 640px; table-layout: fixed; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .stat-table thead th:nth-child(1), .stat-table thead th:nth-child(2) { width: 20%; }
+  .stat-table thead th:nth-child(3), .stat-table thead th:nth-child(4) { width: 9%; }
+  .stat-table thead th:nth-child(5) { width: 12%; }
+  .stat-table thead th:nth-child(n+6) { width: 15%; }
+  .stat-table th, .stat-table td { overflow: hidden; text-overflow: ellipsis; }
+  .stat-table th:not(:first-child), .stat-table td:not(:first-child) { padding-inline: 8px; }
   .stat-table th, .stat-table td { padding: 7px 12px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
   .stat-table tr:last-child td, .stat-table tr:last-child th { border-bottom: 0; }
   .stat-table thead th { color: var(--text-3); font-weight: 500; }
@@ -485,7 +488,7 @@
 </head>
 <body>
 <header>
-  <h1><svg class="logo" width="24" height="24" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><g transform="rotate(-7 16 17)"><path d="M16 9c0-3 3-2 3-5" fill="none" stroke="#ae81ff" stroke-width="1.8" stroke-linecap="round"/><circle cx="19.2" cy="3.4" r="2.4" fill="#f92672"/><rect x="2" y="15" width="3.5" height="7" rx="1.6" fill="#ae81ff"/><rect x="26.5" y="15" width="3.5" height="7" rx="1.6" fill="#ae81ff"/><rect x="4.5" y="8.5" width="23" height="20" rx="6.5" fill="#a6e22e"/><circle cx="11.5" cy="15" r="3.8" fill="#191a17"/><circle cx="12.6" cy="14" r="1.5" fill="#f4f4ee"/><circle cx="21" cy="14.6" r="2.7" fill="#191a17"/><circle cx="20.2" cy="15.3" r="1.1" fill="#66d9ef"/><rect x="8" y="20.3" width="16" height="6" rx="1.8" fill="#191a17"/><rect x="10" y="21.6" width="2.8" height="3.5" rx=".7" fill="#66d9ef"/><rect x="14.6" y="21.6" width="2.8" height="2.2" rx=".7" fill="#fd971f"/><rect x="19.2" y="21.6" width="2.8" height="3" rx=".7" fill="#f92672"/></g></svg>Kanbot</h1>
+  <h1><svg class="logo" width="22" height="22" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#a6e22e"/><rect x="7" y="8" width="4.5" height="16" rx="2.25" fill="#191a17"/><rect x="13.75" y="8" width="4.5" height="10" rx="2.25" fill="#191a17"/><rect x="20.5" y="8" width="4.5" height="13" rx="2.25" fill="#191a17"/></svg>Kanbot</h1>
   <nav class="view-switch" aria-label="View">
     <a href="#board" id="view-board" aria-current="page">Board</a>
     <a href="#stats" id="view-stats">Stats</a>
@@ -1383,7 +1386,7 @@ function statsTable(spec, rows) {
   scroller.setAttribute("aria-labelledby", heading.id);
   const table = el("table", "stat-table");
   const headRow = el("tr");
-  [spec.column, "Tickets", "Open", "Done", "Cancelled", "Avg time", "Median time"].forEach((label) => {
+  [spec.column, "Tickets", "Open", "Done", "Cancelled", "Average", "Median"].forEach((label) => {
     const th = el("th", "", label);
     th.scope = "col";
     headRow.append(th);
