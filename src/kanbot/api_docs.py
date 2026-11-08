@@ -1,4 +1,5 @@
 """The API description served at GET /api, also the list of ticket fields."""
+
 from kanbot.db import PRIORITIES, STATUSES
 
 API_DOCS = {

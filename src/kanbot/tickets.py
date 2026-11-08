@@ -1,4 +1,5 @@
 """Ticket validation and storage: CRUD, dependencies, notes, claims, history, listing."""
+
 import re
 from urllib.parse import parse_qs
 
@@ -152,7 +153,8 @@ def set_dependencies(conn, ticket_id, depends_on):
             current = stack.pop()
             if current == ticket_id:
                 raise ApiError(
-                    400, f"Ticket {ticket_id} can't depend on ticket {start}: that would be circular."
+                    400,
+                    f"Ticket {ticket_id} can't depend on ticket {start}: that would be circular.",
                 )
             if current not in seen:
                 seen.add(current)
@@ -228,9 +230,7 @@ def update_ticket(db_path, ticket_id, body):
         status = fields.get("status", current["status"])
         priority = fields.get("priority", current["priority"])
         moved = (
-            position is not None
-            or status != current["status"]
-            or priority != current["priority"]
+            position is not None or status != current["status"] or priority != current["priority"]
         )
         fields["updated_at"] = now()
         if status != current["status"]:
@@ -276,7 +276,9 @@ def claim_ticket(db_path, ticket_id, body):
             (assignee, stamp, ticket_id),
         )
         if current["assignee"] != assignee:
-            record_history(conn, ticket_id, assignee, "assignee", current["assignee"], assignee, stamp)
+            record_history(
+                conn, ticket_id, assignee, "assignee", current["assignee"], assignee, stamp
+            )
         return fetch_ticket(conn, ticket_id)
 
 
@@ -315,10 +317,17 @@ def delete_ticket(db_path, ticket_id):
 
 
 def list_tickets(db_path, query):
-    params = {
-        key: values[-1] for key, values in parse_qs(query, keep_blank_values=True).items()
+    params = {key: values[-1] for key, values in parse_qs(query, keep_blank_values=True).items()}
+    unknown = set(params) - {
+        "status",
+        "project",
+        "priority",
+        "idea",
+        "assignee",
+        "created_by",
+        "q",
+        "ready",
     }
-    unknown = set(params) - {"status", "project", "priority", "idea", "assignee", "created_by", "q", "ready"}
     if unknown:
         raise ApiError(400, f"Unknown query parameters: {', '.join(sorted(unknown))}.")
 

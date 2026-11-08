@@ -1,4 +1,5 @@
 """Command line entry point."""
+
 import argparse
 import os
 from pathlib import Path

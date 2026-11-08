@@ -150,7 +150,6 @@ class MigrationTest(unittest.TestCase):
             self.assertEqual(ticket["title"], "old")
             self.assertIs(ticket["idea"], False)
 
-
     def test_backfills_completed_at_for_done_tickets(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "old.db"
@@ -213,11 +212,23 @@ class MigrationTest(unittest.TestCase):
                 self.assertEqual(
                     {k: old[k] for k in old},
                     {
-                        "id": 1, "title": "first", "description": "", "status": "in_progress",
-                        "priority": "high", "project": "web", "idea": True, "position": 4,
-                        "created_by": None, "assignee": None, "note_count": 0,
-                        "depends_on": [], "blocked_by": [], "blocks": [],
-                        "created_at": "then", "updated_at": "later", "completed_at": None,
+                        "id": 1,
+                        "title": "first",
+                        "description": "",
+                        "status": "in_progress",
+                        "priority": "high",
+                        "project": "web",
+                        "idea": True,
+                        "position": 4,
+                        "created_by": None,
+                        "assignee": None,
+                        "note_count": 0,
+                        "depends_on": [],
+                        "blocked_by": [],
+                        "blocks": [],
+                        "created_at": "then",
+                        "updated_at": "later",
+                        "completed_at": None,
                     },
                 )
                 self.assertEqual(call("POST", base, {"title": "new"})["id"], 3)

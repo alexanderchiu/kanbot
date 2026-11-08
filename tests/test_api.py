@@ -59,9 +59,7 @@ class ApiTest(unittest.TestCase):
         path = f"/api/tickets/{ticket['id']}"
         status, moved = self.call("PATCH", path, {"status": "done"})
         self.assertEqual((status, moved["status"]), (200, "done"))
-        _, edited = self.call(
-            "PATCH", path, {"title": "New", "priority": "high", "project": None}
-        )
+        _, edited = self.call("PATCH", path, {"title": "New", "priority": "high", "project": None})
         self.assertEqual(edited["title"], "New")
         self.assertEqual(edited["priority"], "high")
         self.assertIsNone(edited["project"])
@@ -138,8 +136,15 @@ class ApiTest(unittest.TestCase):
         ann, bob = stats["by_creator"]
         self.assertEqual(
             ann,
-            {"name": "ann", "tickets": 4, "open": 1, "done": 2, "cancelled": 1,
-             "avg_completion_seconds": 7200, "median_completion_seconds": 7200},
+            {
+                "name": "ann",
+                "tickets": 4,
+                "open": 1,
+                "done": 2,
+                "cancelled": 1,
+                "avg_completion_seconds": 7200,
+                "median_completion_seconds": 7200,
+            },
         )
         self.assertEqual(bob["name"], "bob")
         self.assertEqual(bob["median_completion_seconds"], 600)
@@ -197,9 +202,7 @@ class ApiTest(unittest.TestCase):
         self.create(project="api")
         self.create()
         _, projects = self.call("GET", "/api/projects")
-        self.assertEqual(
-            projects, [{"name": "api", "tickets": 1}, {"name": "web", "tickets": 2}]
-        )
+        self.assertEqual(projects, [{"name": "api", "tickets": 1}, {"name": "web", "tickets": 2}])
 
     def test_idea_tag(self):
         plain = self.create(title="task", project="web")
@@ -322,7 +325,14 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(listed["note_count"], 2)
         self.assertNotIn("notes", listed)
 
-        for body in ({}, {"body": "  "}, {"body": 1}, {"body": "x", "author": 2}, {"body": "x", "by": "y"}, []):
+        for body in (
+            {},
+            {"body": "  "},
+            {"body": 1},
+            {"body": "x", "author": 2},
+            {"body": "x", "by": "y"},
+            [],
+        ):
             self.assertEqual(self.call("POST", f"{path}/notes", body)[0], 400)
         self.assertEqual(self.call("POST", "/api/tickets/999/notes", {"body": "x"})[0], 404)
 
@@ -339,11 +349,15 @@ class ApiTest(unittest.TestCase):
 
         def changes():
             history = self.call("GET", path)[1]["history"]
-            return [(h["actor"], h["field"], h["old_value"], h["new_value"]) for h in reversed(history)]
+            return [
+                (h["actor"], h["field"], h["old_value"], h["new_value"]) for h in reversed(history)
+            ]
 
         self.assertEqual(changes(), [("agent", "created", None, None)])
 
-        self.call("PATCH", path, {"status": "done", "priority": "high", "idea": True, "actor": "Alex"})
+        self.call(
+            "PATCH", path, {"status": "done", "priority": "high", "idea": True, "actor": "Alex"}
+        )
         self.assertEqual(
             changes()[1:],
             [
@@ -398,10 +412,17 @@ class ApiTest(unittest.TestCase):
         )
         self.assertEqual(self.call("PATCH", path, {"depends_on": []})[1]["depends_on"], [])
 
-        for body in ({"depends_on": 1}, {"depends_on": ["1"]}, {"depends_on": [True]}, {"depends_on": [999]}):
+        for body in (
+            {"depends_on": 1},
+            {"depends_on": ["1"]},
+            {"depends_on": [True]},
+            {"depends_on": [999]},
+        ):
             self.assertEqual(self.call("PATCH", path, body)[0], 400, body)
         self.assertEqual(self.call("PATCH", path, {"depends_on": [third["id"]]})[0], 400)
-        self.assertEqual(self.call("POST", "/api/tickets", {"title": "x", "depends_on": [999]})[0], 400)
+        self.assertEqual(
+            self.call("POST", "/api/tickets", {"title": "x", "depends_on": [999]})[0], 400
+        )
         self.assertEqual(len(self.call("GET", "/api/tickets")[1]), 3)
 
     def test_rejects_circular_dependencies(self):
@@ -511,7 +532,9 @@ class ApiTest(unittest.TestCase):
     def test_concurrent_creates_keep_unique_positions(self):
         with ThreadPoolExecutor(8) as pool:
             statuses = list(
-                pool.map(lambda i: self.call("POST", "/api/tickets", {"title": str(i)})[0], range(40))
+                pool.map(
+                    lambda i: self.call("POST", "/api/tickets", {"title": str(i)})[0], range(40)
+                )
             )
         self.assertEqual(set(statuses), {201})
         _, tickets = self.call("GET", "/api/tickets")

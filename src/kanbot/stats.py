@@ -1,4 +1,5 @@
 """Ticket statistics for GET /api/stats."""
+
 import statistics
 from datetime import datetime
 from urllib.parse import parse_qs
@@ -14,7 +15,7 @@ def completion_seconds(created_at, completed_at):
         fmt = "%Y-%m-%dT%H:%M:%SZ"
         start = datetime.strptime(created_at, fmt)
         end = datetime.strptime(completed_at, fmt)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     seconds = (end - start).total_seconds()
     return seconds if seconds >= 0 else None
@@ -39,9 +40,7 @@ def summarize(rows):
 
 
 def ticket_stats(db_path, query):
-    params = {
-        key: values[-1] for key, values in parse_qs(query, keep_blank_values=True).items()
-    }
+    params = {key: values[-1] for key, values in parse_qs(query, keep_blank_values=True).items()}
     unknown = set(params) - {"project"}
     if unknown:
         raise ApiError(400, f"Unknown query parameters: {', '.join(sorted(unknown))}.")

@@ -1,4 +1,5 @@
 """HTTP handler, routing, Host and Origin checks, and server setup."""
+
 import json
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -123,7 +124,7 @@ class Handler(BaseHTTPRequestHandler):
             self.route()
         except ApiError as error:
             self.send_json(error.status, {"error": error.message})
-        except (BrokenPipeError, ConnectionResetError):
+        except BrokenPipeError, ConnectionResetError:
             pass
         except Exception as error:
             self.log_error("%s %s failed: %r", self.command, self.path, error)

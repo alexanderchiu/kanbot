@@ -1,4 +1,5 @@
 """SQLite connection, schema, migrations and backups."""
+
 import sqlite3
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -117,9 +118,7 @@ def migrate(db_path):
 
         columns = ", ".join(r["name"] for r in conn.execute("PRAGMA table_info(tickets)"))
         # Keep the ID counter, so IDs of deleted tickets are never reused.
-        counter = conn.execute(
-            "SELECT seq FROM sqlite_sequence WHERE name = 'tickets'"
-        ).fetchone()
+        counter = conn.execute("SELECT seq FROM sqlite_sequence WHERE name = 'tickets'").fetchone()
         conn.execute(TICKETS_TABLE.format(name="tickets_new"))
         conn.execute(f"INSERT INTO tickets_new ({columns}) SELECT {columns} FROM tickets")
         conn.execute("DROP TABLE tickets")
