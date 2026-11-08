@@ -1,100 +1,71 @@
-# Kanbot
+<p align="center"><img src="icon.svg" width="64" height="64" alt=""></p>
 
-A local kanban board with a web UI for you and a JSON API for your agents. It has no third-party dependencies, uses [uv](https://docs.astral.sh/uv/) to manage Python, and stores everything in `kanban.db` (SQLite) next to the server. The server listens on `127.0.0.1` only.
+<h1 align="center">Kanbot</h1>
 
-## Run
+<p align="center">A local kanban board for you and your AI coding agents.</p>
+
+> [!CAUTION]
+> **This is a completely vibecoded app.** It was written by AI agents, mostly Claude, from conversational requests, with little line-by-line human review. It has tests and has been used daily, but treat it as experimental:
+>
+> - **No login:** anyone who can reach the port can read, change or delete every ticket. Keep it on `localhost` or a trusted home network.
+> - **Not reviewed for security:** no audit or hardening for exposure on the internet has been done.
+> - **Keep backups:** your data lives in a single SQLite file, and it's backed up automatically on start, but take your own copies too.
+> - **No stability promises:** the API and data format may change without notice.
+>
+> Use it at your own risk.
+
+![The board](docs/screenshots/board.png)
+
+## What it does
+
+Agents create and update tickets through a JSON API while they work, and you watch, edit and steer from a web UI.
+
+- **Columns:** Follow-up, In progress, Blocked and Done, plus a hidden Cancelled column.
+- **Tickets:** priorities, project tags, ideas, assignees and creators.
+- **Agent coordination:** dependencies, a `ready` filter for work with nothing left to wait on, and claims that stop two agents taking the same ticket.
+- **History:** notes for handoffs, and a change history recording who changed what.
+- **Stats:** ticket counts and completion times by creator, assignee, project and priority.
+- **Live updates:** agent changes appear within 3 seconds, without reloading.
+- **Search and shortcuts:** search, project filters, and `N` and `/` keyboard shortcuts.
+- **No dependencies:** a single Python process with no third-party packages and a SQLite file. It runs locally, as a systemd service, or in Docker on a NAS.
+
+| Ticket panel | Stats | Phone |
+|---|---|---|
+| ![Ticket panel](docs/screenshots/ticket.png) | ![Stats](docs/screenshots/stats.png) | ![Phone layout](docs/screenshots/phone.png) |
+
+## Quick start
+
+You need [uv](https://docs.astral.sh/uv/). It fetches the right Python for you.
 
 ```sh
+git clone git@github.com:alexanderchiu/kanbot.git
+cd kanbot
 uv run server.py                  # http://127.0.0.1:8787
-uv run server.py --port 9000 --db /path/to/board.db
 ```
 
-## Run on a Synology NAS or with Docker
+Options: `--port`, `--db` (the default is `kanban.db` in this folder), `--backup-dir`, `--host` and `--allowed-hosts`. Each has a `KANBOT_*` environment variable equivalent; see `--help`.
 
-See [docs/synology.md](docs/synology.md). For any Docker host, copy `.env.example` to `.env`, edit it, and run `docker compose up -d --build`.
+## Ways to run it
 
-## Run as a service
+- **On your machine, always on:** `./install.sh` installs a systemd user service that starts at login and restarts on failure. Run it again after updating the code: the service doesn't restart itself, and the page is served fresh, so it can get ahead of an old server. Check it with `systemctl --user status kanbot` and `journalctl --user -u kanbot -f`. It stops when you log out, unless you run `loginctl enable-linger`. To remove it, run `systemctl --user disable --now kanbot`, then delete `~/.config/systemd/user/kanbot.service`.
+- **On a Synology NAS or any Docker host:** see [docs/synology.md](docs/synology.md). For any Docker host, copy `.env.example` to `.env`, edit it, and run `docker compose up -d --build`.
 
-To run the board as a systemd user service that starts when you log in and restarts if it fails:
+## Using the board
 
-```sh
-./install.sh
-```
-
-Run `./install.sh` again after updating the code. The service doesn't restart itself when files change, and `index.html` is served fresh on every request, so the page can get ahead of a server that hasn't restarted.
-
-```sh
-systemctl --user status kanbot
-journalctl --user -u kanbot -f
-```
-
-The service stops when you log out, unless you run `loginctl enable-linger`. To remove it, run `systemctl --user disable --now kanbot`, then delete `~/.config/systemd/user/kanbot.service`.
+- **Creating tickets:** press `N` or use **New ticket**, or the **+** on a column.
+- **Moving tickets:** drag cards between columns and to reorder them.
+- **Editing:** click a card to open its panel. There you can edit fields, add notes, manage dependencies, see history, and cancel or delete the ticket.
+- **Finding tickets:** press `/` to search by number, text, project, assignee or creator. The **Project** menu and the **Ideas** and **Cancelled** toggles filter the board.
+- **Stats:** **Stats** shows counts and completion times, filtered by the same project menu.
+- **Cards:** each card shows its priority, project, assignee, creator, note count, what it's waiting on, and when it was created, or completed once it's done. Links in descriptions and notes are clickable.
 
 ## Backups
 
-Each time the server starts, it copies the database to `backups/` beside it, unless nothing has changed since the last copy. It keeps the newest 30. To restore one, stop the server and copy a backup over `kanban.db`.
-
-## Use the board
-
-- Press `N` for a new ticket or `/` to search.
-- Drag cards to move or reorder them. The board picks up agent changes within 3 seconds.
-- Cards show the date a ticket was created, or completed once it's done. Open a card to see the exact times.
-- Cards show who created a ticket, such as `by claude-code`, unless it has no creator.
-- Links in descriptions and notes are clickable.
-- Click a card to edit, cancel or delete it. Cancelled tickets stay on record and are hidden until you turn on the **Cancelled** toggle. To reopen one, change its status.
-- Use **New ticket** or the **+** button on a column to create a ticket.
-- Use the search box to find tickets by number, text, project, assignee or creator.
-- Use the **Project** menu to filter the board by project, or use the **Ideas** toggle to see just ideas.
-
-## Tickets
-
-| Field | Values | Default |
-|---|---|---|
-| `title` | Non-empty string (required on create) | |
-| `description` | String | `""` |
-| `status` | `follow_up`, `in_progress`, `blocked`, `done`, `cancelled` | `follow_up` |
-| `priority` | `high`, `medium`, `low` | `medium` |
-| `project` | String or `null`, stored lowercase | `null` |
-| `idea` | `true` or `false`; tags the ticket as an idea | `false` |
-| `created_by` | String or `null`, stored lowercase; can only be set on create | `null` |
-| `assignee` | String or `null`, stored lowercase | `null` |
-| `depends_on` | List of ticket IDs that must finish first; `PATCH` replaces the whole list | `[]` |
-| `position` | Integer index within the column, from 0 | Placed by priority |
-
-Tickets also return these read-only fields:
-
-- `id`
-- `note_count`
-- `blocked_by`: IDs from `depends_on` that aren't `done` or `cancelled` yet.
-- `blocks`: IDs of tickets that depend on this one.
-- `created_at`: when the ticket was created, in UTC.
-- `updated_at`: when the ticket last changed, in UTC.
-- `completed_at`: when the ticket moved to `done`, in UTC. It's cleared if the ticket leaves `done`, and is `null` for every other status.
-
-If you don't set `position`, a ticket goes before the first ticket of lower priority in its column, or at the end if there is none. Setting `position` or dragging a card overrides this.
+Each time the server starts, it copies the database to `backups/` beside it, unless nothing has changed since the last copy, and always before upgrading the database. It keeps the newest 30. To restore one, stop the server and copy a backup over `kanban.db`.
 
 ## API
 
-| Request | Purpose |
-|---|---|
-| `GET /api` | API description, in JSON |
-| `GET /api/tickets` | List tickets in board order; filter with `status`, `project`, `priority`, `idea`, `assignee`, `created_by`, `q`, `ready` |
-| `POST /api/tickets` | Create a ticket |
-| `GET /api/tickets/{id}` | Get a ticket, including its notes and change history |
-| `PATCH /api/tickets/{id}` | Change or move a ticket; add `"actor": "name"` to record who did it |
-| `POST /api/tickets/{id}/notes` | Add a note with `{"body": "text", "author": "name"}` |
-| `POST /api/tickets/{id}/claim` | Take a ticket with `{"assignee": "name"}`; returns 409 if someone else holds it |
-| `DELETE /api/tickets/{id}` | Delete a ticket permanently |
-| `GET /api/projects` | List project tags with ticket counts |
-| `GET /api/stats` | Ticket counts and average and median completion time, overall and by creator, assignee, project and priority; filter with `project` |
-
-An empty `project` or `assignee` filter lists tickets without one, so `assignee=` finds unassigned work. Use `ready=true` to list follow-up tickets with nothing left to wait for. Circular dependencies are rejected, and a dependency doesn't move or lock a ticket: it only shows what the ticket is waiting on.
-
-Every change to a ticket's fields is recorded in its history, except reordering. History starts from when this feature was added, and deleting a ticket deletes its history.
-
-`GET /api/stats` returns `total`, `open`, `by_status`, `avg_completion_seconds` and `median_completion_seconds`, then `by_creator`, `by_assignee`, `by_project` and `by_priority`. Each breakdown row has `name`, `tickets`, `open`, `done`, `cancelled`, `avg_completion_seconds` and `median_completion_seconds`, and rows are sorted by ticket count. A `name` of `null` collects tickets with no creator, assignee or project. Completion time runs from `created_at` to `completed_at` for done tickets; it is `null` when nothing has completed, and tickets with an unreadable or negative duration are left out of the time figures. Tickets moved to Done before completion tracking was added use their last-updated time as `completed_at`. The UI shows this under the Stats switch in the header (`#stats`).
-
-API errors return a 4xx or 5xx status with `{"error": "message"}`.
+See [docs/api.md](docs/api.md) for the full reference. `GET /api` describes the API in JSON.
 
 ## Instructions for agents
 
@@ -130,8 +101,14 @@ existing tag.
 To find work to pick up, query `ready=true`. Add `"depends_on": [42]` when one ticket must wait for another. `GET /api` describes the full API.
 ````
 
-## Test
+## Development
 
 ```sh
-uv run python -m unittest
+uv run python -m unittest         # tests
 ```
+
+Notes for agents working on this repo are in [CLAUDE.md](CLAUDE.md). README screenshots use made-up demo data.
+
+## License
+
+[MIT](LICENSE)
