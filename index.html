@@ -1060,7 +1060,8 @@ function mergeOpenTicket() {
     showError("This ticket was deleted. Close the panel to discard your changes.");
     return;
   }
-  if (fresh.updated_at === editing.updated_at && fresh.note_count === editing.note_count) return;
+  // updated_at only has second resolution, so compare the whole ticket.
+  if (JSON.stringify(fresh) === JSON.stringify(editing)) return;
   const current = formValues();
   const setters = {
     title: (v) => { form.elements.title.value = v; },
