@@ -2,6 +2,7 @@
 
 import argparse
 import os
+from contextlib import suppress
 from pathlib import Path
 
 from kanbot import __doc__ as DESCRIPTION
@@ -38,7 +39,5 @@ def main():
     print(f"Kanbot running on {args.host}:{server.server_port} (db: {args.db})", flush=True)
     if args.host not in LOCAL_HOSTS:
         print(f"Allowed hosts: {', '.join(sorted(server.allowed_hosts))}", flush=True)
-    try:
+    with suppress(KeyboardInterrupt):
         server.serve_forever()
-    except KeyboardInterrupt:
-        pass

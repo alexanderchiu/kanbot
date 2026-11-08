@@ -25,7 +25,7 @@ CREATE TABLE {name} (
     updated_at  TEXT NOT NULL,
     completed_at TEXT
 );
-"""
+"""  # noqa: E501
 
 NOTES_TABLE = """
 CREATE TABLE IF NOT EXISTS notes (

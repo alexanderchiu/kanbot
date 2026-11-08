@@ -57,7 +57,7 @@ class Handler(BaseHTTPRequestHandler):
             origin = self.headers.get("Origin")
             origin_host = urlsplit(origin).netloc if origin else host
         except ValueError:
-            raise ApiError(403, "Invalid Host or Origin header.")
+            raise ApiError(403, "Invalid Host or Origin header.") from None
         allowed = self.server.allowed_hosts
         if ("*" not in allowed and hostname not in allowed) or origin_host != host:
             raise ApiError(
@@ -68,7 +68,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", 0))
         except ValueError:
-            raise ApiError(400, "Invalid Content-Length.")
+            raise ApiError(400, "Invalid Content-Length.") from None
         if length < 0:
             raise ApiError(400, "Invalid Content-Length.")
         if length > MAX_BODY:
@@ -79,7 +79,7 @@ class Handler(BaseHTTPRequestHandler):
             json.dumps(body, ensure_ascii=False).encode()
             return body
         except ValueError:
-            raise ApiError(400, "Request body must be valid JSON.")
+            raise ApiError(400, "Request body must be valid JSON.") from None
 
     def route(self):
         self.check_request_source()

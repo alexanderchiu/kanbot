@@ -63,7 +63,8 @@ class BackupTest(unittest.TestCase):
 class MigrationTest(unittest.TestCase):
     OLD_TABLE = (
         "CREATE TABLE tickets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL,"
-        " description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, priority TEXT NOT NULL,"
+        " description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,"
+        " priority TEXT NOT NULL,"
         " project TEXT, position INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,"
         " updated_at TEXT NOT NULL{extra})"
     )
@@ -74,7 +75,8 @@ class MigrationTest(unittest.TestCase):
             conn = sqlite3.connect(db)
             conn.execute(self.OLD_TABLE.format(extra=", completed_at TEXT"))
             conn.execute(
-                "INSERT INTO tickets (title, status, priority, created_at, updated_at, completed_at)"
+                "INSERT INTO tickets"
+                " (title, status, priority, created_at, updated_at, completed_at)"
                 " VALUES ('x', 'done', 'low', 'then', 'edited-later', 'real-completion')"
             )
             conn.commit()
@@ -125,7 +127,8 @@ class MigrationTest(unittest.TestCase):
             conn = sqlite3.connect(db)
             conn.execute(
                 "CREATE TABLE tickets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL,"
-                " description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, priority TEXT NOT NULL,"
+                " description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,"
+                " priority TEXT NOT NULL,"
                 " project TEXT, position INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,"
                 " updated_at TEXT NOT NULL)"
             )
@@ -156,8 +159,10 @@ class MigrationTest(unittest.TestCase):
             conn = sqlite3.connect(db)
             conn.execute(
                 "CREATE TABLE tickets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL,"
-                " description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, priority TEXT NOT NULL,"
-                " project TEXT, idea INTEGER NOT NULL DEFAULT 0, position INTEGER NOT NULL DEFAULT 0,"
+                " description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,"
+                " priority TEXT NOT NULL,"
+                " project TEXT, idea INTEGER NOT NULL DEFAULT 0,"
+                " position INTEGER NOT NULL DEFAULT 0,"
                 " created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"
             )
             conn.execute(
