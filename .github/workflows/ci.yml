@@ -1,0 +1,51 @@
+# Lint and test on every push and pull request; on master, also apply database migrations
+# to Supabase. See docs/supabase.md for the secret and environment this needs.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.5"
+      - run: uv sync --locked
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      # Docker is available on GitHub's runners, so the Postgres tests run too.
+      - run: uv run pytest -q
+
+  migrate:
+    needs: test
+    if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    # Holds the SUPABASE_DATABASE_URL secret. Add required reviewers to the environment
+    # to approve each migration by hand.
+    environment: supabase
+    # One migration at a time; a queued run waits rather than being cancelled mid-way.
+    concurrency:
+      group: supabase-migrations
+      cancel-in-progress: false
+    env:
+      KANBOT_DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.5"
+      - run: uv sync --locked --no-dev
+      - name: Skip without a database
+        if: env.KANBOT_DATABASE_URL == ''
+        run: echo "::notice::SUPABASE_DATABASE_URL isn't set in the supabase environment, so no migrations ran."
+      - name: Apply migrations
+        if: env.KANBOT_DATABASE_URL != ''
+        run: uv run kanbot migrate
