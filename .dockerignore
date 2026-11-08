@@ -1,3 +1,6 @@
 *
-!server.py
-!index.html
+!pyproject.toml
+!uv.lock
+!README.md
+!src/
+**/__pycache__

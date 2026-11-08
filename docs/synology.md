@@ -33,7 +33,7 @@ On the first run, edit `/volume1/docker/kanbot/.env` with File Station's text ed
 
 ## Option 2: Container Manager only
 
-1. Copy the repo to `/volume1/docker/kanbot` with File Station. You only need `server.py`, `index.html`, `Dockerfile`, `.dockerignore`, `docker-compose.yml` and `.env.example`.
+1. Copy the repo to `/volume1/docker/kanbot` with File Station. You only need `pyproject.toml`, `uv.lock`, `README.md`, the `src` folder, `Dockerfile`, `.dockerignore`, `docker-compose.yml` and `.env.example`.
 2. Copy `.env.example` to `.env` in that folder and edit it.
 3. In **Container Manager › Project › Create**, choose that folder, use the existing `docker-compose.yml`, and finish the wizard. It builds the image and starts the container.
 

@@ -1,4 +1,4 @@
-<p align="center"><img src="icon.svg" width="64" height="64" alt=""></p>
+<p align="center"><img src="src/kanbot/static/icon.svg" width="64" height="64" alt=""></p>
 
 <h1 align="center">Kanbot</h1>
 
@@ -27,7 +27,7 @@ Agents create and update tickets through a JSON API while they work, and you wat
 - **Stats:** ticket counts and completion times by creator, assignee, project and priority.
 - **Live updates:** agent changes appear within 3 seconds, without reloading.
 - **Search and shortcuts:** search, project filters, and `N` and `/` keyboard shortcuts.
-- **No dependencies:** a single Python process with no third-party packages and a SQLite file. It runs locally, as a systemd service, or in Docker on a NAS.
+- **No runtime dependencies:** a single Python process with no third-party packages and a SQLite file. It runs locally, as a systemd service, or in Docker on a NAS.
 
 | Ticket panel | Stats | Phone |
 |---|---|---|
@@ -40,10 +40,10 @@ You need [uv](https://docs.astral.sh/uv/). It fetches the right Python for you.
 ```sh
 git clone git@github.com:alexanderchiu/kanbot.git
 cd kanbot
-uv run server.py                  # http://127.0.0.1:8787
+uv run kanbot                     # http://127.0.0.1:8787
 ```
 
-Options: `--port`, `--db` (the default is `kanban.db` in this folder), `--backup-dir`, `--host` and `--allowed-hosts`. Each has a `KANBOT_*` environment variable equivalent; see `--help`.
+Options: `--port`, `--db` (the default is `kanban.db` in the folder you start it from), `--backup-dir`, `--host` and `--allowed-hosts`. Each has a `KANBOT_*` environment variable equivalent; see `--help`.
 
 ## Ways to run it
 
@@ -104,10 +104,12 @@ To find work to pick up, query `ready=true`. Add `"depends_on": [42]` when one t
 ## Development
 
 ```sh
-uv run python -m unittest         # tests
+uv run pytest                     # tests
+uv run ruff check                 # lint
+uv run ruff format                # format
 ```
 
-Notes for agents working on this repo are in [CLAUDE.md](CLAUDE.md). README screenshots use made-up demo data.
+The backend is the `kanbot` package in `src/kanbot/`, with tests in `tests/`. The UI is in `src/kanbot/static/`. Notes for agents working on this repo are in [CLAUDE.md](CLAUDE.md). README screenshots use made-up demo data.
 
 ## License
 

@@ -5,7 +5,7 @@ StartLimitIntervalSec=0
 
 [Service]
 WorkingDirectory=@REPO@
-ExecStart="@UV@" run --quiet server.py
+ExecStart="@UV@" run --quiet kanbot
 Restart=on-failure
 RestartSec=10
 
