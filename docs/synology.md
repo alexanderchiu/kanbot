@@ -58,6 +58,8 @@ Set these in `.env`:
 |---|---|
 | `KANBOT_ALLOWED_HOSTS` | Comma-separated names or IPs you'll type in the browser, such as `nas.local,192.168.1.10`. `localhost` is always allowed. Browsers sending any other name get a 403, which blocks DNS rebinding attacks. `*` allows any name but removes that protection. |
 | `KANBOT_PUBLISH_PORT` | Port on the NAS. The default is `8787`. |
+| `KANBOT_DATABASE_URL` | Optional. A Supabase or other Postgres URL, to keep the data there instead of in `data/`. See [supabase.md](supabase.md). |
+| `KANBOT_MIGRATE` | Optional. `0` stops the container changing the schema, for when CI runs migrations. |
 
 The database and its backups live in `data/` next to `docker-compose.yml`. Include that folder in Hyper Backup.
 

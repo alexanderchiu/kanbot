@@ -5,6 +5,8 @@ StartLimitIntervalSec=0
 
 [Service]
 WorkingDirectory=@REPO@
+# Optional settings, such as KANBOT_DATABASE_URL. See docs/supabase.md.
+EnvironmentFile=-%h/.config/kanbot.env
 ExecStart="@UV@" run --quiet kanbot
 Restart=on-failure
 RestartSec=10

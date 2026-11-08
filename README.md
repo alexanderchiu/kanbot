@@ -9,7 +9,7 @@
 >
 > - **No login:** anyone who can reach the port can read, change or delete every ticket. Keep it on `localhost` or a trusted home network.
 > - **Not reviewed for security:** no audit or hardening for exposure on the internet has been done.
-> - **Keep backups:** your data lives in a single SQLite file, and it's backed up automatically on start, but take your own copies too.
+> - **Keep backups:** by default your data lives in a single SQLite file, and it's backed up automatically on start, but take your own copies too.
 > - **No stability promises:** the API and data format may change without notice.
 >
 > Use it at your own risk.
@@ -28,7 +28,7 @@ Agents create and update tickets through a JSON API while they work, and you wat
 - **Agents view:** which Claude Code sessions are working, waiting for your input or stopped by a usage limit, with model, ticket, time, turns and tokens. See [Agent sessions](#agent-sessions).
 - **Live updates:** agent changes appear within 3 seconds, without reloading.
 - **Search and shortcuts:** search, project filters, and `N` and `/` keyboard shortcuts.
-- **No runtime dependencies:** a single Python process with no third-party packages and a SQLite file. It runs locally, as a systemd service, or in Docker on a NAS.
+- **SQLite or Supabase:** a single Python process with a SQLite file by default, or a Supabase or other Postgres database, with versioned migrations. It runs locally, as a systemd service, or in Docker on a NAS.
 
 | Ticket panel | Stats | Agents | Phone |
 |---|---|---|---|
@@ -44,11 +44,12 @@ cd kanbot
 uv run kanbot                     # http://127.0.0.1:8787
 ```
 
-Options: `--port`, `--db` (the default is `kanban.db` in the folder you start it from), `--backup-dir`, `--host` and `--allowed-hosts`. Each has a `KANBOT_*` environment variable equivalent; see `--help`.
+Options: `--port`, `--db` (a SQLite file or a database URL; the default is `kanban.db` in the folder you start it from), `--backup-dir`, `--host`, `--allowed-hosts` and `--no-migrate`. Each has a `KANBOT_*` environment variable equivalent; see `--help`. `kanbot migrate` applies schema migrations, and `kanbot copy-db SOURCE TARGET` copies a whole board into a new database.
 
 ## Ways to run it
 
 - **On your machine, always on:** `./install.sh` installs a systemd user service that starts at login and restarts on failure. Run it again after updating the code: the service doesn't restart itself, and the page is served fresh, so it can get ahead of an old server. Check it with `systemctl --user status kanbot` and `journalctl --user -u kanbot -f`. It stops when you log out, unless you run `loginctl enable-linger`. To remove it, run `systemctl --user disable --now kanbot`, then delete `~/.config/systemd/user/kanbot.service`.
+- **With the data in Supabase:** see [docs/supabase.md](docs/supabase.md) to create the project, copy your board across, and have GitHub Actions run migrations.
 - **On a Synology NAS or any Docker host:** see [docs/synology.md](docs/synology.md). `deploy/deploy-synology.sh --check admin@nas.local` checks the NAS is ready without changing anything, and the same command without `--check` deploys, optionally with `--ref v0.1.0`. For any Docker host, copy `.env.example` to `.env`, edit it, and run `docker compose up -d --build`.
 
 ## Using the board
@@ -67,7 +68,7 @@ Install Claude Code hooks with `uv run kanbot-hooks install` to have each sessio
 
 ## Backups
 
-Each time the server starts, it copies the database to `backups/` beside it, unless nothing has changed since the last copy, and always before upgrading the database. It keeps the newest 30. To restore one, stop the server and copy a backup over `kanban.db`.
+When using SQLite, each time the server starts, it copies the database to `backups/` beside it, unless nothing has changed since the last copy, and always before upgrading the database. It keeps the newest 30. To restore one, stop the server and copy a backup over `kanban.db`.
 
 ## API
 
@@ -110,12 +111,12 @@ To find work to pick up, query `ready=true`. Add `"depends_on": [42]` when one t
 ## Development
 
 ```sh
-uv run pytest                     # tests
+uv run pytest                     # tests, on SQLite and on Postgres in Docker
 uv run ruff check                 # lint
 uv run ruff format                # format
 ```
 
-The backend is the `kanbot` package in `src/kanbot/`, with tests in `tests/`. The UI is plain HTML, CSS and native ES modules in `src/kanbot/static/`: `index.html` is the markup, `css/` and `js/` hold the styles and code split by concern, and the server serves them under `/static/`. There is no build step and nothing to install, so edit a file and reload. Notes for agents working on this repo are in [CLAUDE.md](CLAUDE.md). README screenshots use made-up demo data.
+The backend is the `kanbot` package in `src/kanbot/`, with tests in `tests/`. The Postgres tests start a throwaway container with testcontainers, and skip if Docker isn't available; set `KANBOT_TEST_POSTGRES=0` to skip them. Schema changes are Alembic migrations in `src/kanbot/migrations/versions/`; see [Writing a migration](docs/supabase.md#writing-a-migration). GitHub Actions runs the checks on every push. The UI is plain HTML, CSS and native ES modules in `src/kanbot/static/`: `index.html` is the markup, `css/` and `js/` hold the styles and code split by concern, and the server serves them under `/static/`. There is no build step and nothing to install, so edit a file and reload. Notes for agents working on this repo are in [CLAUDE.md](CLAUDE.md). README screenshots use made-up demo data.
 
 Releases follow [semver](https://semver.org) and are recorded in [CHANGELOG.md](CHANGELOG.md). To cut one, add notes under `## Unreleased`, then run `scripts/release.sh patch`, `minor` or `major`. It runs the checks, bumps the version, dates the changelog, and commits, tags and pushes.
 

@@ -10,6 +10,9 @@ services:
     environment:
       # Host names or IPs you'll open the board with, such as your NAS's name and LAN IP.
       KANBOT_ALLOWED_HOSTS: "${KANBOT_ALLOWED_HOSTS:-}"
+      # Set in .env to use Supabase or another Postgres database instead of data/.
+      KANBOT_DATABASE_URL: "${KANBOT_DATABASE_URL:-}"
+      KANBOT_MIGRATE: "${KANBOT_MIGRATE:-1}"
     volumes:
       # The database and its backups live here, outside the container.
       - ./data:/data

@@ -11,11 +11,16 @@ All notable changes to Kanbot. The format follows [Keep a Changelog](https://kee
 - `GET /api` and `kanbot --version` report the version.
 - `deploy/deploy-synology.sh` has `--check`, `--dry-run`, `--ref` and `--port`, and waits for a health check after deploying.
 - Release script and this changelog.
+- Supabase and other Postgres databases, chosen with `--db` or `KANBOT_DATABASE_URL`. SQLite stays the default. See [docs/supabase.md](docs/supabase.md).
+- Versioned Alembic migrations, applied at startup or with `kanbot migrate`. `--no-migrate` (`KANBOT_MIGRATE=0`) leaves migrations to CI and only checks the schema.
+- `kanbot copy-db SOURCE TARGET` copies a whole board into a new, empty database, keeping IDs and timestamps.
+- GitHub Actions workflow: lint and tests on SQLite and Postgres on every push, then Supabase migrations on `master`.
 - Ticket descriptions follow a Why / What / How outline. New tickets in the UI start from it, and `GET /api` returns it as `description_template`.
 
 ### Changed
 
 - The backend is now the `kanbot` package in `src/kanbot/`. It runs with `uv run kanbot`, is tested with pytest and is linted with ruff.
+- The server now depends on SQLAlchemy, Alembic and psycopg. Existing SQLite files are upgraded and stamped with the first migration on start.
 - The default database is `kanban.db` in the folder you start Kanbot from, rather than next to the code.
 
 ### Fixed
