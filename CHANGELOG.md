@@ -4,6 +4,8 @@ All notable changes to Kanbot. The format follows [Keep a Changelog](https://kee
 
 ## Unreleased
 
+## [0.2.0] - 2026-11-08
+
 ### Added
 
 - Agent session tracking from Claude Code hooks, with a `kanbot-hooks` command to install them. Sessions report their state, model, ticket, working time, turns, tool calls and best-effort token counts. See [docs/agent-hooks.md](docs/agent-hooks.md).
