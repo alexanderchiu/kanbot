@@ -6,6 +6,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from urllib.parse import parse_qs, unquote, urlsplit
 
+import sqlalchemy as sa
+
 from kanbot import __version__
 from kanbot.agents import delete_agent, list_agents, record_event
 from kanbot.api_docs import API_DOCS
@@ -168,7 +170,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_request(self):
         try:
-            self.route()
+            try:
+                self.route()
+            except sa.exc.DBAPIError as error:
+                # A pooled connection the database closed while it sat idle. Reads are
+                # safe to repeat, on a fresh connection; writes may already have applied.
+                if not (error.connection_invalidated and self.command == "GET"):
+                    raise
+                self.route()
         except ApiError as error:
             self.send_json(error.status, {"error": error.message})
         except BrokenPipeError, ConnectionResetError:

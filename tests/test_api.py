@@ -536,3 +536,14 @@ class ApiTest(SqliteBackend, unittest.TestCase):
 
 class PostgresApiTest(PostgresBackend, ApiTest):
     """The same tests against Postgres."""
+
+    def test_reads_survive_the_database_dropping_idle_connections(self):
+        self.create(title="kept")
+        self.call("GET", "/api/tickets")
+        # What a hosted database or its pooler does to connections idle for too long.
+        self.sql(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity"
+            " WHERE datname = current_database() AND pid != pg_backend_pid()"
+        )
+        status, tickets = self.call("GET", "/api/tickets")
+        self.assertEqual((status, [t["title"] for t in tickets]), (200, ["kept"]))

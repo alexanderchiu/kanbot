@@ -72,13 +72,21 @@ class Database:
         else:
             self.engine = sa.create_engine(
                 self.url,
-                # Hosted databases drop idle connections, and transaction-mode poolers
-                # such as Supabase's port 6543 can't keep prepared statements.
-                pool_pre_ping=True,
-                pool_recycle=300,
+                # A hosted database can be a long round trip away, so connections
+                # aren't pinged before each use. TCP keepalives and recycling stop most
+                # from going stale, and web.py retries reads on one that has.
+                pool_recycle=120,
                 pool_size=5,
                 max_overflow=5,
-                connect_args={"prepare_threshold": None},
+                connect_args={
+                    # Transaction-mode poolers such as Supabase's port 6543 can't keep
+                    # prepared statements.
+                    "prepare_threshold": None,
+                    "keepalives": 1,
+                    "keepalives_idle": 30,
+                    "keepalives_interval": 10,
+                    "keepalives_count": 3,
+                },
             )
 
     @property
@@ -98,8 +106,12 @@ class Database:
 
     @contextmanager
     def connect(self):
-        """A connection for reads."""
-        with self.engine.connect() as connection:
+        """A connection for reads. On Postgres it autocommits, which saves the round
+        trips of BEGIN and ROLLBACK around every read."""
+        connection = self.engine.connect()
+        if not self.is_sqlite:
+            connection = connection.execution_options(isolation_level="AUTOCOMMIT")
+        with connection:
             yield Conn(connection)
 
     @contextmanager
