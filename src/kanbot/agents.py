@@ -211,14 +211,15 @@ def session_json(row, stamp, tickets):
 def list_agents(db, include_ended=False):
     stamp = now()
     with db.connect() as conn:
-        rows = conn.execute("SELECT * FROM agent_sessions ORDER BY started_at DESC").fetchall()
-        tickets = {
-            row["id"]: dict(row)
-            for row in conn.execute(
+        rows, ticket_rows = conn.fetch_many(
+            ("SELECT * FROM agent_sessions ORDER BY started_at DESC", None),
+            (
                 "SELECT id, title, status FROM tickets WHERE id IN"
-                " (SELECT ticket_id FROM agent_sessions WHERE ticket_id IS NOT NULL)"
-            )
-        }
+                " (SELECT ticket_id FROM agent_sessions WHERE ticket_id IS NOT NULL)",
+                None,
+            ),
+        )
+    tickets = {row["id"]: dict(row) for row in ticket_rows}
 
     def visible(row):
         if include_ended:

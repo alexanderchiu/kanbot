@@ -109,15 +109,31 @@ def ticket_json(row):
     return {**dict(row), "idea": bool(row["idea"])}
 
 
-def attach_dependencies(conn, tickets):
-    """Add depends_on, blocked_by and blocks to each ticket."""
+# Dependency rows with the status of the ticket depended on, for attach_dependencies.
+SELECT_DEPENDENCIES = (
+    "SELECT d.ticket_id, d.depends_on, t.status FROM dependencies d"
+    " JOIN tickets t ON t.id = d.depends_on"
+)
+ORDER_DEPENDENCIES = " ORDER BY d.depends_on, d.ticket_id"
+
+
+def ticket_queries(ticket_id):
+    """The ticket and its dependency rows, as queries for Conn.fetch_many."""
+    return (
+        (f"{SELECT_TICKET} WHERE id = :id", {"id": ticket_id}),
+        (
+            f"{SELECT_DEPENDENCIES} WHERE d.ticket_id = :id OR d.depends_on = :id"
+            + ORDER_DEPENDENCIES,
+            {"id": ticket_id},
+        ),
+    )
+
+
+def attach_dependencies(tickets, rows):
+    """Add depends_on, blocked_by and blocks to each ticket, from dependency rows."""
     by_id = {ticket["id"]: ticket for ticket in tickets}
     for ticket in tickets:
         ticket.update(depends_on=[], blocked_by=[], blocks=[])
-    rows = conn.execute(
-        "SELECT d.ticket_id, d.depends_on, t.status FROM dependencies d"
-        " JOIN tickets t ON t.id = d.depends_on ORDER BY d.depends_on, d.ticket_id"
-    )
     for row in rows:
         if row["ticket_id"] in by_id:
             by_id[row["ticket_id"]]["depends_on"].append(row["depends_on"])
@@ -127,25 +143,32 @@ def attach_dependencies(conn, tickets):
             by_id[row["depends_on"]]["blocks"].append(row["ticket_id"])
 
 
-def fetch_ticket(conn, ticket_id):
-    row = conn.execute(f"{SELECT_TICKET} WHERE id = :id", {"id": ticket_id}).fetchone()
-    if row is None:
+def build_ticket(ticket_id, rows, dependency_rows):
+    if not rows:
         raise ApiError(404, f"Ticket {ticket_id} not found.")
-    ticket = ticket_json(row)
-    attach_dependencies(conn, [ticket])
+    ticket = ticket_json(rows[0])
+    attach_dependencies([ticket], dependency_rows)
     return ticket
+
+
+def fetch_ticket(conn, ticket_id):
+    return build_ticket(ticket_id, *conn.fetch_many(*ticket_queries(ticket_id)))
 
 
 def set_dependencies(conn, ticket_id, depends_on):
     """Replace a ticket's dependencies, refusing any that would form a cycle."""
     if ticket_id in depends_on:
         raise ApiError(400, "A ticket can't depend on itself.")
+    ids, dependency_rows = conn.fetch_many(
+        ("SELECT id FROM tickets", None), ("SELECT ticket_id, depends_on FROM dependencies", None)
+    )
+    existing = {row["id"] for row in ids}
     for other in depends_on:
-        if not conn.execute("SELECT 1 FROM tickets WHERE id = :id", {"id": other}).fetchone():
+        if other not in existing:
             raise ApiError(400, f"depends_on refers to ticket {other}, which doesn't exist.")
 
     edges = {}
-    for row in conn.execute("SELECT ticket_id, depends_on FROM dependencies"):
+    for row in dependency_rows:
         edges.setdefault(row["ticket_id"], []).append(row["depends_on"])
     for start in depends_on:
         seen, stack = set(), [start]
@@ -375,8 +398,11 @@ def list_tickets(db, query):
     if where:
         sql += " WHERE " + " AND ".join(where)
     with db.connect() as conn:
-        rows = [ticket_json(row) for row in conn.execute(sql, args)]
-        attach_dependencies(conn, rows)
+        ticket_rows, dependency_rows = conn.fetch_many(
+            (sql, args), (SELECT_DEPENDENCIES + ORDER_DEPENDENCIES, None)
+        )
+    rows = [ticket_json(row) for row in ticket_rows]
+    attach_dependencies(rows, dependency_rows)
     if "ready" in params:
         if params["ready"] not in ("true", "false"):
             raise ApiError(400, "ready must be true or false.")
@@ -387,16 +413,18 @@ def list_tickets(db, query):
 
 
 def get_ticket(db, ticket_id):
+    ids = {"id": ticket_id}
     with db.connect() as conn:
-        ticket = fetch_ticket(conn, ticket_id)
-        notes = conn.execute(
-            "SELECT * FROM notes WHERE ticket_id = :id ORDER BY id", {"id": ticket_id}
-        ).fetchall()
-        history = conn.execute(
-            "SELECT actor, field, old_value, new_value, at FROM history"
-            " WHERE ticket_id = :id ORDER BY id DESC",
-            {"id": ticket_id},
-        ).fetchall()
+        rows, dependency_rows, notes, history = conn.fetch_many(
+            *ticket_queries(ticket_id),
+            ("SELECT * FROM notes WHERE ticket_id = :id ORDER BY id", ids),
+            (
+                "SELECT actor, field, old_value, new_value, at FROM history"
+                " WHERE ticket_id = :id ORDER BY id DESC",
+                ids,
+            ),
+        )
+    ticket = build_ticket(ticket_id, rows, dependency_rows)
     return {
         **ticket,
         "notes": [dict(row) for row in notes],

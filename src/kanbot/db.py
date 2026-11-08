@@ -6,11 +6,13 @@ from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
 
+import psycopg
 import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
+from psycopg.rows import dict_row
 
 from kanbot import legacy
 from kanbot.schema import PRIORITIES, STATUSES
@@ -41,6 +43,16 @@ def database_url(target):
     return url
 
 
+_POSTGRES_CONNECT_ARGS = {
+    # Transaction-mode poolers such as Supabase's port 6543 can't keep prepared statements.
+    "prepare_threshold": None,
+    "keepalives": 1,
+    "keepalives_idle": 30,
+    "keepalives_interval": 10,
+    "keepalives_count": 3,
+}
+
+
 class Conn:
     """A connection that runs plain SQL with :named parameters and returns mappings."""
 
@@ -61,6 +73,35 @@ class Conn:
     def scalar(self, sql, params=None):
         return self.connection.execute(sa.text(sql), params or {}).scalar()
 
+    def fetch_many(self, *queries):
+        """Run several (sql, params) reads and return a list of rows for each.
+
+        On Postgres they're sent together in one round trip, using psycopg's pipeline
+        mode; on SQLite they run in turn.
+        """
+        if self.connection.dialect.driver != "psycopg":
+            return [self.execute(sql, params).all() for sql, params in queries]
+        raw = self.connection.connection.driver_connection
+        cursors = []
+        try:
+            with raw.pipeline():
+                for sql, params in queries:
+                    # Compiling turns :name into psycopg's %(name)s and escapes any %.
+                    compiled = sa.text(sql).compile(dialect=self.connection.dialect)
+                    cursor = raw.cursor(row_factory=dict_row)
+                    cursor.execute(str(compiled), params or {})
+                    cursors.append(cursor)
+            return [cursor.fetchall() for cursor in cursors]
+        except psycopg.Error as error:
+            # These bypass SQLAlchemy, so report errors the way it would, including
+            # dropping a dead connection from the pool so the request can be retried.
+            lost = raw.broken or raw.closed
+            if lost:
+                self.connection.invalidate(error)
+            raise sa.exc.DBAPIError.instance(
+                None, None, error, psycopg.Error, connection_invalidated=lost
+            ) from error
+
 
 class Database:
     def __init__(self, target):
@@ -78,15 +119,7 @@ class Database:
                 pool_recycle=120,
                 pool_size=5,
                 max_overflow=5,
-                connect_args={
-                    # Transaction-mode poolers such as Supabase's port 6543 can't keep
-                    # prepared statements.
-                    "prepare_threshold": None,
-                    "keepalives": 1,
-                    "keepalives_idle": 30,
-                    "keepalives_interval": 10,
-                    "keepalives_count": 3,
-                },
+                connect_args=_POSTGRES_CONNECT_ARGS,
             )
 
     @property
