@@ -21,7 +21,8 @@ All notable changes to Kanbot. The format follows [Keep a Changelog](https://kee
 ### Changed
 
 - The backend is now the `kanbot` package in `src/kanbot/`. It runs with `uv run kanbot`, is tested with pytest and is linted with ruff.
-- Reads that need several queries, such as opening a ticket, send them in one round trip on Postgres.
+- The UI is split into CSS files and native ES modules, served under `/static/`, still with no build step.
+- Fewer round trips to a remote database: no connection ping before each request, and reads that need several queries, such as opening a ticket, send them in one round trip on Postgres.
 - The server now depends on SQLAlchemy, Alembic and psycopg. Existing SQLite files are upgraded and stamped with the first migration on start.
 - The default database is `kanban.db` in the folder you start Kanbot from, rather than next to the code.
 
