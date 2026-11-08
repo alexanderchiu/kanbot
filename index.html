@@ -156,6 +156,18 @@
   .toggle .count { color: var(--text-3); }
   #filter { max-width: 170px; color: var(--text-2); }
 
+  #filtered-empty {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 20px 8px;
+    padding: 4px 4px 4px 12px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    color: var(--text-2);
+  }
   #banner {
     flex: none;
     margin: 0 20px 8px;
@@ -505,6 +517,10 @@
   <label class="toggle"><input type="checkbox" id="show-cancelled"> Cancelled <span class="count" id="cancelled-count"></span></label>
   <button type="button" class="button primary" id="new-ticket">New ticket <kbd class="hint" aria-hidden="true">N</kbd></button>
 </header>
+<div id="filtered-empty" role="status" hidden>
+  No tickets match the current filters.
+  <button type="button" class="button quiet" id="clear-filters">Clear filters</button>
+</div>
 <div id="banner" role="alert" hidden>Can't reach the Kanbot server. Retrying…</div>
 <main id="board"></main>
 <main id="stats-view" hidden aria-label="Statistics"></main>
@@ -698,10 +714,13 @@ function showToast(message) {
 
 function renderFilter() {
   const projects = [...new Set(tickets.map((t) => t.project).filter(Boolean))].sort();
-  const current = filter.value || loadSetting("kanban-project");
-  const options = current && !projects.includes(current) ? [...projects, current].sort() : projects;
+  // A saved project that no longer has tickets, for example after a rename, would hide
+  // the whole board, so fall back to all projects.
+  const saved = filter.value || loadSetting("kanban-project");
+  const current = projects.includes(saved) ? saved : "";
+  if (saved !== current) saveSetting("kanban-project", "");
 
-  filter.replaceChildren(new Option("All projects", ""), ...options.map((p) => new Option(p, p)));
+  filter.replaceChildren(new Option("All projects", ""), ...projects.map((p) => new Option(p, p)));
   filter.value = current;
   $("project-list").replaceChildren(...projects.map((p) => new Option(p, p)));
   $("ticket-list").replaceChildren(...tickets.map((t) => new Option(`#${t.id} ${t.title}`)));
@@ -836,6 +855,9 @@ function render() {
   );
   const cancelled = visible.filter((t) => t.status === CANCELLED.status);
   $("cancelled-count").textContent = cancelled.length;
+  const shown = showCancelled.checked ? visible : visible.filter((t) => t.status !== CANCELLED.status);
+  const filtering = Boolean(filter.value || ideasOnly.checked || query);
+  $("filtered-empty").hidden = !(filtering && tickets.length && !shown.length);
 
   // Rebuilding the board mustn't lose the reader's place when an agent changes a ticket.
   const scroll = {};
@@ -1276,6 +1298,15 @@ filter.addEventListener("change", () => {
 });
 
 $("search").addEventListener("input", render);
+
+$("clear-filters").addEventListener("click", () => {
+  filter.value = "";
+  ideasOnly.checked = false;
+  $("search").value = "";
+  saveSetting("kanban-project", "");
+  saveSetting("kanban-ideas-only", "");
+  render();
+});
 $("search").addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   $("search").value = "";
