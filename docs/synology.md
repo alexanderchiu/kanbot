@@ -13,19 +13,30 @@ Kanbot runs as a small Docker container. The repo includes a `Dockerfile`, a `do
 
 ## Option 1: deploy with the script (recommended)
 
-From your computer, in this repo:
+From your computer, in this repo, start by checking the NAS is ready. This only reads, so it's safe to run any time:
 
 ```sh
-deploy/deploy-synology.sh admin@nas.local
+deploy/deploy-synology.sh --check admin@nas.local
 ```
 
-The second argument sets the folder on the NAS. It defaults to `/volume1/docker/kanbot`, and the `docker` shared folder must exist.
+It checks SSH, Docker and Compose, that the folder is writable, your `.env` settings, whether a database exists, and which version is running. Fix anything marked `fail`.
 
-The script:
+Then deploy:
 
-1. Copies the committed code with `git archive`, so your local database, `.env` and uncommitted changes stay on your computer.
-2. Creates `.env` from `.env.example` on the first run and asks you to edit it.
-3. Builds the image and starts or restarts the container with `docker compose up -d --build`. It asks for your NAS password because Docker needs `sudo` on DSM.
+```sh
+deploy/deploy-synology.sh --dry-run admin@nas.local        # show what it would do
+deploy/deploy-synology.sh admin@nas.local                  # deploy what's committed
+deploy/deploy-synology.sh --ref v0.1.0 admin@nas.local     # deploy a release
+```
+
+Options: `--dir` sets the folder on the NAS, which defaults to `/volume1/docker/kanbot`. Its parent shared folder must exist. `--port` must match `KANBOT_PUBLISH_PORT` if you changed it.
+
+A deploy:
+
+1. Copies the chosen commit with `git archive`, replacing the old code. Your local database, `.env` and uncommitted changes stay on your computer.
+2. Creates `.env` from `.env.example` on the first run, then stops so you can edit it.
+3. Builds the image, tagged with the version, and restarts the container with `docker compose up -d --build`. It asks for your NAS password because Docker needs `sudo` on DSM.
+4. Waits for the container's health check and prints the running version. If the container doesn't become healthy, it shows the logs.
 
 On the first run, edit `/volume1/docker/kanbot/.env` with File Station's text editor or over SSH. Set `KANBOT_ALLOWED_HOSTS` to every name and IP you'll use to open the board, then run the script again.
 
@@ -59,7 +70,7 @@ The database and its backups live in `data/` next to `docker-compose.yml`. Inclu
 
 ## Pointing agents at the NAS
 
-Agents find the board through the URL in their instructions. Replace `http://127.0.0.1:8787` with your NAS's address, for example `http://nas.local:8787`, in `~/.claude/CLAUDE.md` and any project instructions. Add that name to `KANBOT_ALLOWED_HOSTS` only if you also open it in a browser: `curl` and other non-browser clients aren't affected by the host check.
+Agents find the board through the URL in their instructions. Replace `http://127.0.0.1:8787` with your NAS's address, for example `http://nas.local:8787`, in `~/.claude/CLAUDE.md` and any project instructions. Add that name to `KANBOT_ALLOWED_HOSTS` too. Every client sends the name it used in the Host header, including `curl` and the hooks, and the board refuses names that aren't allowed.
 
 ## Troubleshooting
 
