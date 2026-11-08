@@ -15,11 +15,13 @@ All notable changes to Kanbot. The format follows [Keep a Changelog](https://kee
 - Versioned Alembic migrations, applied at startup or with `kanbot migrate`. `--no-migrate` (`KANBOT_MIGRATE=0`) leaves migrations to CI and only checks the schema.
 - `kanbot copy-db SOURCE TARGET` copies a whole board into a new, empty database, keeping IDs and timestamps.
 - GitHub Actions workflow: lint and tests on SQLite and Postgres on every push, then Supabase migrations on `master`.
+- Live updates: the server streams change events on `GET /api/events`, so the board, stats and agents views update straight away instead of polling every 3 seconds. With Postgres, servers sharing a database hear each other's changes through `LISTEN`/`NOTIFY`.
 - Ticket descriptions follow a Why / What / How outline. New tickets in the UI start from it, and `GET /api` returns it as `description_template`.
 
 ### Changed
 
 - The backend is now the `kanbot` package in `src/kanbot/`. It runs with `uv run kanbot`, is tested with pytest and is linted with ruff.
+- Reads that need several queries, such as opening a ticket, send them in one round trip on Postgres.
 - The server now depends on SQLAlchemy, Alembic and psycopg. Existing SQLite files are upgraded and stamped with the first migration on start.
 - The default database is `kanban.db` in the folder you start Kanbot from, rather than next to the code.
 

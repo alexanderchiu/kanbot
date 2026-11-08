@@ -159,6 +159,13 @@ class Database:
                 )
             yield Conn(connection)
 
+    def listen_connection(self, channel):
+        """A separate Postgres connection, outside the pool, that LISTENs on channel."""
+        url = self.url.set(drivername="postgresql").render_as_string(hide_password=False)
+        conn = psycopg.connect(url, autocommit=True, **_POSTGRES_CONNECT_ARGS)
+        conn.execute(f"LISTEN {channel}")
+        return conn
+
     def alembic_config(self, connection=None):
         config = Config()
         config.set_main_option("script_location", str(resources.files("kanbot") / "migrations"))

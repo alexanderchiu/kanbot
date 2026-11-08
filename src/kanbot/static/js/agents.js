@@ -1,4 +1,5 @@
 import { ALL_COLUMNS, CONFIRM_MS, POLL_MS } from "./constants.js";
+import { onChange, poll } from "./live.js";
 import { $, el } from "./dom.js";
 import { api } from "./api.js";
 import { formatAgo, formatElapsed, formatTokens, shortModel, timestamp } from "./format.js";
@@ -11,7 +12,6 @@ import { showToast } from "./toast.js";
 const agentsView = $("agents-view");
 const badge = $("agents-badge");
 
-const BADGE_MS = 10000;
 const STALE_SECONDS = 12 * 3600;
 
 // Order matters: the sort puts sessions that need the user first.
@@ -395,8 +395,12 @@ export function showAgents(active) {
 }
 
 document.addEventListener("visibilitychange", () => { refreshAgents(); refreshBadge(); });
+// Times on the cards come from the server, so the open view still refreshes for the clock.
 setInterval(() => refreshAgents(), POLL_MS);
-setInterval(refreshBadge, BADGE_MS);
+// Sessions show their ticket's title and status, so ticket changes count too.
+onChange(["agents", "tickets"], () => refreshAgents());
+onChange(["agents"], refreshBadge);
+poll(refreshBadge);
 
 // The panel returns focus to the board, which isn't showing, so put it back on the ticket link.
 $("dialog").addEventListener("close", () => {

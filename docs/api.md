@@ -57,8 +57,11 @@ How: Prefill the description in the UI and publish the template in GET /api.
 | `DELETE /api/tickets/{id}` | Delete a ticket permanently |
 | `GET /api/projects` | List project tags with ticket counts |
 | `GET /api/stats` | Ticket counts and average and median completion time, overall and by creator, assignee, project and priority; filter with `project` |
+| `GET /api/events` | A stream of server-sent events, one after each change (see below) |
 
 An empty `project` or `assignee` filter lists tickets without one, so `assignee=` finds unassigned work. Use `ready=true` to list follow-up tickets with nothing left to wait for. Circular dependencies are rejected, and a dependency doesn't move or lock a ticket: it only shows what the ticket is waiting on.
+
+`GET /api/events` keeps the connection open and sends an event named `change` after each successful write, such as `data: {"kinds": ["tickets"]}`. The kinds are `tickets` and `agents`. A burst of changes arrives as one event. The event carries no ticket data, so refetch what you need. The UI uses it to update straight away. With Postgres, the server also hears about changes made through other servers sharing the database. Try it with `curl -N http://127.0.0.1:8787/api/events`.
 
 Every change to a ticket's fields is recorded in its history, except reordering. History starts from when this feature was added, and deleting a ticket deletes its history.
 

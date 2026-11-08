@@ -1,6 +1,7 @@
 """HTTP handler, routing, Host and Origin checks, and server setup."""
 
 import json
+import queue
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
@@ -13,6 +14,7 @@ from kanbot.agents import delete_agent, list_agents, record_event
 from kanbot.api_docs import API_DOCS
 from kanbot.db import Database
 from kanbot.errors import ApiError
+from kanbot.events import Changes
 from kanbot.stats import ticket_stats
 from kanbot.tickets import (
     add_note,
@@ -32,6 +34,8 @@ CLAIM_PATH = re.compile(r"^/api/tickets/(\d{1,18})/claim$")
 NOTES_PATH = re.compile(r"^/api/tickets/(\d{1,18})/notes$")
 AGENT_PATH = re.compile(r"^/api/agents/([\w.:-]{1,200})$")
 STATIC_PREFIX = "/static/"
+# A comment line on idle event streams, so dead connections are noticed and closed.
+HEARTBEAT_SECONDS = 15
 STATIC_TYPES = {
     ".css": "text/css; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
@@ -138,6 +142,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_bytes(200, *found)
         if method == "GET" and path == "/api":
             return self.send_json(200, {"version": __version__, **API_DOCS})
+        if method == "GET" and path == "/api/events":
+            return self.stream_events()
+        if method != "GET":
+            # What a successful write here changes; announced once the reply has gone.
+            self.changed = "agents" if path.startswith("/api/agent") else "tickets"
         if path == "/api/tickets":
             if method == "GET":
                 return self.send_json(200, list_tickets(db, url.query))
@@ -158,7 +167,10 @@ class Handler(BaseHTTPRequestHandler):
         if method == "GET" and path == "/api/projects":
             return self.send_json(200, list_projects(db))
         if path == "/api/agent-events" and method == "POST":
-            return self.send_json(200, record_event(db, self.read_body()))
+            result = record_event(db, self.read_body())
+            if "ignored" in result:
+                self.changed = None
+            return self.send_json(200, result)
         if path == "/api/agents" and method == "GET":
             include_ended = parse_qs(url.query).get("all") == ["true"]
             return self.send_json(200, list_agents(db, include_ended))
@@ -168,7 +180,44 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(200, ticket_stats(db, url.query))
         raise ApiError(404, f"No route for {method} {path}. See GET /api for the API docs.")
 
+    def stream_events(self):
+        """Send a server-sent event each time the board changes, until the page goes."""
+        changes = self.server.changes
+        subscriber = changes.subscribe()
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            # How long the browser waits before reconnecting, in milliseconds.
+            self.wfile.write(b"retry: 3000\n\n")
+            self.wfile.flush()
+            while True:
+                try:
+                    first = subscriber.get(timeout=HEARTBEAT_SECONDS)
+                except queue.Empty:
+                    self.wfile.write(b": still here\n\n")
+                    self.wfile.flush()
+                    continue
+                # Send a burst of changes, such as an agent's tool calls, as one event.
+                items = [first]
+                while True:
+                    try:
+                        items.append(subscriber.get_nowait())
+                    except queue.Empty:
+                        break
+                if None in items:
+                    return
+                kinds = set().union(*items)
+                data = json.dumps({"kinds": sorted(kinds)})
+                self.wfile.write(f"event: change\ndata: {data}\n\n".encode())
+                self.wfile.flush()
+        finally:
+            changes.unsubscribe(subscriber)
+            self.close_connection = True
+
     def handle_request(self):
+        self.changed = None
         try:
             try:
                 self.route()
@@ -185,6 +234,9 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as error:
             self.log_error("%s %s failed: %r", self.command, self.path, error)
             self.send_json(500, {"error": f"Internal error: {error}"})
+        else:
+            if self.changed:
+                self.server.changes.publish(self.changed)
 
     do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = handle_request
 
@@ -193,9 +245,12 @@ class Server(ThreadingHTTPServer):
     # The default queue of 5 drops connections when many agents call at once.
     request_queue_size = 128
     db = None
+    changes = None
 
     def server_close(self):
         super().server_close()
+        if self.changes is not None:
+            self.changes.close()
         if self.db is not None:
             self.db.close()
 
@@ -211,6 +266,7 @@ def make_server(database, port, backup_dir=None, host="127.0.0.1", allowed_hosts
         extra = {name.strip().lower() for name in allowed_hosts if name.strip()}
         server.allowed_hosts = LOCAL_HOSTS | extra
         server.db = database if isinstance(database, Database) else Database(database)
+        server.changes = Changes(server.db)
         if not migrate:
             if warning := server.db.check_schema():
                 print(warning, flush=True)

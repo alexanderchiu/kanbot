@@ -18,6 +18,9 @@ export const DESCRIPTION_TEMPLATE = "Why: \nWhat: \nHow: ";
 
 export const POLL_MS = 3000;
 
+// How often views refetch anyway while live updates are connected.
+export const FALLBACK_POLL_MS = 30000;
+
 export const TOAST_MS = 4000;
 
 export const CONFIRM_MS = 4000;

@@ -26,7 +26,7 @@ Agents create and update tickets through a JSON API while they work, and you wat
 - **History:** notes for handoffs, and a change history recording who changed what.
 - **Stats:** ticket counts and completion times by creator, assignee, project and priority.
 - **Agents view:** which Claude Code sessions are working, waiting for your input or stopped by a usage limit, with model, ticket, time, turns and tokens. See [Agent sessions](#agent-sessions).
-- **Live updates:** agent changes appear within 3 seconds, without reloading.
+- **Live updates:** changes appear straight away, without reloading, pushed from the server as server-sent events.
 - **Search and shortcuts:** search, project filters, and `N` and `/` keyboard shortcuts.
 - **SQLite or Supabase:** a single Python process with a SQLite file by default, or a Supabase or other Postgres database, with versioned migrations. It runs locally, as a systemd service, or in Docker on a NAS.
 

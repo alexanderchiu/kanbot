@@ -1,4 +1,5 @@
-import { PRIORITIES, POLL_MS } from "./constants.js";
+import { PRIORITIES } from "./constants.js";
+import { onChange, poll } from "./live.js";
 import { $, el, filter } from "./dom.js";
 import { formatDuration } from "./format.js";
 import { loadSetting } from "./settings.js";
@@ -119,4 +120,5 @@ filter.addEventListener("change", () => { statsPayload = null; refreshStats(true
 
 document.addEventListener("visibilitychange", () => refreshStats());
 
-setInterval(() => refreshStats(), POLL_MS);
+poll(() => refreshStats());
+onChange(["tickets"], () => refreshStats());

@@ -67,5 +67,8 @@ API_DOCS = {
         "by_priority. Rows are sorted by ticket count; name is null for tickets with no "
         "creator, assignee or project. Optional query parameter: project (empty means "
         "no project).",
+        "GET /api/events": "Server-sent events: an event named change, with data "
+        '{"kinds": ["tickets"]} or ["agents"], after each change to the board. '
+        "Refetch what changed; the stream sends no ticket data.",
     },
 }

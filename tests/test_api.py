@@ -534,6 +534,75 @@ class ApiTest(SqliteBackend, unittest.TestCase):
         self.assertEqual([t["position"] for t in tickets], list(range(40)))
 
 
+class EventsTest(SqliteBackend, unittest.TestCase):
+    """GET /api/events tells pages about changes as they happen."""
+
+    def setUp(self):
+        self.db = self.new_database()
+        self.server = self.start(self.db)
+
+    def start(self, db):
+        server = make_server(db, 0)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return server
+
+    def stream(self, server):
+        """Open an event stream, returning a function that reads the next event."""
+        conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=10)
+        conn.request("GET", "/api/events")
+        response = conn.getresponse()
+        self.addCleanup(conn.close)
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.getheader("Content-Type"), "text/event-stream")
+        self.assertEqual(response.readline(), b"retry: 3000\n")
+        response.readline()
+
+        def next_event():
+            lines = []
+            while (line := response.readline().decode()) != "\n":
+                lines.append(line.rstrip("\n"))
+            return lines
+
+        return next_event
+
+    def post(self, server, path, body):
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{server.server_port}{path}", data=json.dumps(body).encode()
+        )
+        with urllib.request.urlopen(request) as response:
+            return json.load(response)
+
+    def wait_for(self, next_event, kind):
+        # Postgres pages first hear "refetch everything" once the listener connects.
+        for _ in range(5):
+            name, data = next_event()
+            self.assertEqual(name, "event: change")
+            if kind in json.loads(data.removeprefix("data: "))["kinds"]:
+                return
+        self.fail(f"no {kind} event")
+
+    def test_writes_send_events(self):
+        next_event = self.stream(self.server)
+        ticket = self.post(self.server, "/api/tickets", {"title": "x"})
+        self.wait_for(next_event, "tickets")
+        self.post(self.server, f"/api/tickets/{ticket['id']}/notes", {"body": "n"})
+        self.wait_for(next_event, "tickets")
+        self.post(self.server, "/api/agent-events", {"session_id": "s", "hook_event_name": "Stop"})
+        self.wait_for(next_event, "agents")
+
+
+class PostgresEventsTest(PostgresBackend, EventsTest):
+    def test_changes_through_another_server_arrive(self):
+        other = self.start(self.db)
+        next_event = self.stream(self.server)
+        # Once its listener connects, the server has pages refetch everything.
+        self.assertEqual(next_event()[1], 'data: {"kinds": ["agents", "tickets"]}')
+        self.post(other, "/api/tickets", {"title": "from elsewhere"})
+        self.assertEqual(next_event()[1], 'data: {"kinds": ["tickets"]}')
+
+
 class PostgresApiTest(PostgresBackend, ApiTest):
     """The same tests against Postgres."""
 
