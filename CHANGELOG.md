@@ -7,6 +7,7 @@ All notable changes to Kanbot. The format follows [Keep a Changelog](https://kee
 ### Added
 
 - Agent session tracking from Claude Code hooks, with a `kanbot-hooks` command to install them. Sessions report their state, model, ticket, working time, turns, tool calls and best-effort token counts. See [docs/agent-hooks.md](docs/agent-hooks.md).
+- Agents view: live list of agent sessions by state, with a header badge for sessions waiting on you or a usage limit.
 - `GET /api` and `kanbot --version` report the version.
 - `deploy/deploy-synology.sh` has `--check`, `--dry-run`, `--ref` and `--port`, and waits for a health check after deploying.
 - Release script and this changelog.

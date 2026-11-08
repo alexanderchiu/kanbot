@@ -25,13 +25,14 @@ Agents create and update tickets through a JSON API while they work, and you wat
 - **Agent coordination:** dependencies, a `ready` filter for work with nothing left to wait on, and claims that stop two agents taking the same ticket.
 - **History:** notes for handoffs, and a change history recording who changed what.
 - **Stats:** ticket counts and completion times by creator, assignee, project and priority.
+- **Agents view:** which Claude Code sessions are working, waiting for your input or stopped by a usage limit, with model, ticket, time, turns and tokens. See [Agent sessions](#agent-sessions).
 - **Live updates:** agent changes appear within 3 seconds, without reloading.
 - **Search and shortcuts:** search, project filters, and `N` and `/` keyboard shortcuts.
 - **No runtime dependencies:** a single Python process with no third-party packages and a SQLite file. It runs locally, as a systemd service, or in Docker on a NAS.
 
-| Ticket panel | Stats | Phone |
-|---|---|---|
-| ![Ticket panel](docs/screenshots/ticket.png) | ![Stats](docs/screenshots/stats.png) | ![Phone layout](docs/screenshots/phone.png) |
+| Ticket panel | Stats | Agents | Phone |
+|---|---|---|---|
+| ![Ticket panel](docs/screenshots/ticket.png) | ![Stats](docs/screenshots/stats.png) | ![Agents](docs/screenshots/agents.png) | ![Phone layout](docs/screenshots/phone.png) |
 
 ## Quick start
 
@@ -57,6 +58,7 @@ Options: `--port`, `--db` (the default is `kanban.db` in the folder you start it
 - **Editing:** click a card to open its panel. There you can edit fields, add notes, manage dependencies, see history, and cancel or delete the ticket.
 - **Finding tickets:** press `/` to search by number, text, project, assignee or creator. The **Project** menu and the **Ideas** and **Cancelled** toggles filter the board.
 - **Stats:** **Stats** shows counts and completion times, filtered by the same project menu.
+- **Agents:** **Agents** lists active Claude Code sessions, most urgent first, and shows a count on the switch when any are waiting for you or stopped by a usage limit. **Show ended** includes finished and stale sessions, which you can dismiss. It needs the hooks described under Agent sessions.
 - **Cards:** each card shows its priority, project, assignee, creator, note count, what it's waiting on, and when it was created, or completed once it's done. Links in descriptions and notes are clickable.
 
 ## Agent sessions
