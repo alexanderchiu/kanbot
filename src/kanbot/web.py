@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from urllib.parse import parse_qs, urlsplit
 
+from kanbot import __version__
 from kanbot.agents import delete_agent, list_agents, record_event
 from kanbot.api_docs import API_DOCS
 from kanbot.db import backup_database, connect, migrate, tickets_table_outdated
@@ -97,7 +98,7 @@ class Handler(BaseHTTPRequestHandler):
             html = (resources.files("kanbot") / "static" / "index.html").read_bytes()
             return self.send_bytes(200, html, "text/html; charset=utf-8")
         if method == "GET" and path == "/api":
-            return self.send_json(200, API_DOCS)
+            return self.send_json(200, {"version": __version__, **API_DOCS})
         if path == "/api/tickets":
             if method == "GET":
                 return self.send_json(200, list_tickets(db, url.query))

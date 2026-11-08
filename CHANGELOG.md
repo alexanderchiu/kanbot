@@ -1,0 +1,34 @@
+# Changelog
+
+All notable changes to Kanbot. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Until 1.0.0, minor versions may include breaking changes to the API or data.
+
+## Unreleased
+
+### Added
+
+- Agent session tracking from Claude Code hooks, with a `kanbot-hooks` command to install them. Sessions report their state, model, ticket, working time, turns, tool calls and best-effort token counts. See [docs/agent-hooks.md](docs/agent-hooks.md).
+- `GET /api` and `kanbot --version` report the version.
+- `deploy/deploy-synology.sh` has `--check`, `--dry-run`, `--ref` and `--port`, and waits for a health check after deploying.
+- Release script and this changelog.
+
+### Changed
+
+- The backend is now the `kanbot` package in `src/kanbot/`. It runs with `uv run kanbot`, is tested with pytest and is linted with ruff.
+- The default database is `kanban.db` in the folder you start Kanbot from, rather than next to the code.
+
+### Fixed
+
+- `docs/synology.md` wrongly said `curl` clients skip the host check.
+
+## [0.1.0] - 2026-11-08
+
+First version, built over two days of conversation with AI agents.
+
+### Added
+
+- Board with Follow-up, In progress, Blocked and Done columns, plus a hidden Cancelled column, with drag and drop.
+- Tickets with priority, project, idea flag, creator, assignee, dependencies, notes and change history.
+- JSON API for agents, including claims, a `ready` filter and circular-dependency checks.
+- Stats view with completion times by creator, assignee, project and priority.
+- Search, filters, keyboard shortcuts, live updates and a ticket side panel.
+- Backups on start, a systemd user service with an install script, and Docker and Synology deployment.

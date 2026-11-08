@@ -2,7 +2,7 @@
 services:
   kanbot:
     build: .
-    image: kanbot:latest
+    image: kanbot:${KANBOT_VERSION:-latest}
     container_name: kanbot
     restart: unless-stopped
     ports:

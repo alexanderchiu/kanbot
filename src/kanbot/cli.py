@@ -6,11 +6,13 @@ from contextlib import suppress
 from pathlib import Path
 
 from kanbot import __doc__ as DESCRIPTION
+from kanbot import __version__
 from kanbot.web import LOCAL_HOSTS, make_server
 
 
 def main():
     parser = argparse.ArgumentParser(description=DESCRIPTION)
+    parser.add_argument("--version", action="version", version=f"kanbot {__version__}")
     env = os.environ.get
     parser.add_argument(
         "--host",
@@ -36,7 +38,10 @@ def main():
     args = parser.parse_args()
     backup_dir = args.backup_dir or Path(args.db).resolve().parent / "backups"
     server = make_server(args.db, args.port, backup_dir, args.host, args.allowed_hosts.split(","))
-    print(f"Kanbot running on {args.host}:{server.server_port} (db: {args.db})", flush=True)
+    print(
+        f"Kanbot {__version__} running on {args.host}:{server.server_port} (db: {args.db})",
+        flush=True,
+    )
     if args.host not in LOCAL_HOSTS:
         print(f"Allowed hosts: {', '.join(sorted(server.allowed_hosts))}", flush=True)
     with suppress(KeyboardInterrupt):
