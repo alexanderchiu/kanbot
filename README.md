@@ -48,7 +48,7 @@ Options: `--port`, `--db` (the default is `kanban.db` in the folder you start it
 ## Ways to run it
 
 - **On your machine, always on:** `./install.sh` installs a systemd user service that starts at login and restarts on failure. Run it again after updating the code: the service doesn't restart itself, and the page is served fresh, so it can get ahead of an old server. Check it with `systemctl --user status kanbot` and `journalctl --user -u kanbot -f`. It stops when you log out, unless you run `loginctl enable-linger`. To remove it, run `systemctl --user disable --now kanbot`, then delete `~/.config/systemd/user/kanbot.service`.
-- **On a Synology NAS or any Docker host:** see [docs/synology.md](docs/synology.md). For any Docker host, copy `.env.example` to `.env`, edit it, and run `docker compose up -d --build`.
+- **On a Synology NAS or any Docker host:** see [docs/synology.md](docs/synology.md). `deploy/deploy-synology.sh --check admin@nas.local` checks the NAS is ready without changing anything, and the same command without `--check` deploys, optionally with `--ref v0.1.0`. For any Docker host, copy `.env.example` to `.env`, edit it, and run `docker compose up -d --build`.
 
 ## Using the board
 
@@ -58,6 +58,10 @@ Options: `--port`, `--db` (the default is `kanban.db` in the folder you start it
 - **Finding tickets:** press `/` to search by number, text, project, assignee or creator. The **Project** menu and the **Ideas** and **Cancelled** toggles filter the board.
 - **Stats:** **Stats** shows counts and completion times, filtered by the same project menu.
 - **Cards:** each card shows its priority, project, assignee, creator, note count, what it's waiting on, and when it was created, or completed once it's done. Links in descriptions and notes are clickable.
+
+## Agent sessions
+
+Install Claude Code hooks with `uv run kanbot-hooks install` to have each session report what it's doing: its state, model, ticket, working time, turns, tool calls and tokens, and whether it's waiting for your input or stopped by a usage limit. Prompts and tool output are never stored. See [docs/agent-hooks.md](docs/agent-hooks.md).
 
 ## Backups
 
@@ -109,7 +113,9 @@ uv run ruff check                 # lint
 uv run ruff format                # format
 ```
 
-The backend is the `kanbot` package in `src/kanbot/`, with tests in `tests/`. The UI is in `src/kanbot/static/`. Notes for agents working on this repo are in [CLAUDE.md](CLAUDE.md). README screenshots use made-up demo data.
+The backend is the `kanbot` package in `src/kanbot/`, with tests in `tests/`. The UI is in `src/kanbot/static/`. Notes for agents working on this repo are in [CLAUDE.md](CLAUDE.md).
+
+Releases follow [semver](https://semver.org) and are recorded in [CHANGELOG.md](CHANGELOG.md). To cut one, add notes under `## Unreleased`, then run `scripts/release.sh patch`, `minor` or `major`. It runs the checks, bumps the version, dates the changelog, and commits, tags and pushes. README screenshots use made-up demo data.
 
 ## License
 
