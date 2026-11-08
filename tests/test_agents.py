@@ -162,6 +162,25 @@ class AgentsTest(unittest.TestCase):
         [ended] = self.sessions("?all=true")
         self.assertEqual({s["state"] for s in ended["subagents"]}, {"ended"})
 
+    def test_out_of_order_events_do_not_override_newer_state(self):
+        self.event("UserPromptSubmit", kanbot_ts=100.0)
+        self.event("Stop", kanbot_ts=105.0)
+        # A tool event that fired before Stop but arrived after it.
+        self.event("PostToolUse", tool_name="Bash", kanbot_ts=104.0)
+        [session] = self.sessions()
+        self.assertEqual(session["state"], "idle")
+        self.event("PreToolUse", tool_name="Bash", kanbot_ts=103.0)
+        [session] = self.sessions()
+        self.assertEqual((session["state"], session["tool_calls"]), ("idle", 1))
+        self.event("UserPromptSubmit", kanbot_ts=110.0)
+        self.assertEqual(self.sessions()[0]["state"], "working")
+
+    def test_internal_helper_agents_are_ignored(self):
+        self.event("UserPromptSubmit")
+        self.event("SubagentStart", agent_id="helper", agent_type="")
+        self.event("SubagentStop", agent_id="helper")
+        self.assertEqual(self.sessions("?all=true")[0]["subagents"], [])
+
     def test_stale_sessions_are_hidden_and_can_be_dismissed(self):
         self.event("UserPromptSubmit", session="old")
         self.backdate("last_event_at", 13 * 3600)
@@ -241,6 +260,10 @@ class HookScriptTest(unittest.TestCase):
             },
         )
         self.assertEqual(model, "claude-opus-5-5")
+
+    def test_payload_carries_when_the_hook_fired(self):
+        payload = hook.build_payload({"session_id": "s", "hook_event_name": "Stop"}, 123.5)
+        self.assertEqual(payload["kanbot_ts"], 123.5)
 
     def test_payload_drops_prompts_and_tool_output(self):
         event = {

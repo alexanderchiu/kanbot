@@ -52,7 +52,8 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
     output_tokens         INTEGER NOT NULL DEFAULT 0,
     cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
     cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
-    ticket_id             INTEGER
+    ticket_id             INTEGER,
+    state_ts              REAL
 );
 """
 
@@ -139,6 +140,13 @@ def migrate(db_path):
         conn.execute(HISTORY_TABLE)
         conn.execute(AGENT_SESSIONS_TABLE)
         conn.execute("CREATE INDEX IF NOT EXISTS agent_parent ON agent_sessions (parent_key)")
+        agent_columns = {r["name"] for r in conn.execute("PRAGMA table_info(agent_sessions)")}
+        if "state_ts" not in agent_columns:
+            conn.execute("ALTER TABLE agent_sessions ADD COLUMN state_ts REAL")
+        # Rows for Claude Code's internal helpers, recorded before they were ignored.
+        conn.execute(
+            "DELETE FROM agent_sessions WHERE parent_key IS NOT NULL AND agent_type IS NULL"
+        )
         conn.execute("CREATE INDEX IF NOT EXISTS history_ticket ON history (ticket_id)")
         row = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'tickets'").fetchone()
         if row is None:

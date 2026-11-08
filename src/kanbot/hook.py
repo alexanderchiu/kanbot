@@ -12,6 +12,7 @@ and can change between releases. They are best-effort and are skipped if parsing
 import json
 import os
 import sys
+import time
 import urllib.request
 
 URL = os.environ.get("KANBOT_URL", "http://127.0.0.1:8787").rstrip("/") + "/api/agent-events"
@@ -61,8 +62,10 @@ def transcript_usage(path):
     return totals, model
 
 
-def build_payload(event):
+def build_payload(event, fired=None):
     payload = {key: event[key] for key in KEEP if key in event}
+    # Hooks run in parallel, so the board orders events by when they fired.
+    payload["kanbot_ts"] = fired if fired is not None else time.time()
     tool_input = event.get("tool_input")
     if isinstance(tool_input, dict) and isinstance(tool_input.get("command"), str):
         # Only shell commands are sent, so the board can spot ticket claims.
@@ -81,9 +84,10 @@ def build_payload(event):
 
 
 def main():
+    fired = time.time()
     try:
         event = json.load(sys.stdin)
-        data = json.dumps(build_payload(event)).encode()
+        data = json.dumps(build_payload(event, fired)).encode()
         request = urllib.request.Request(
             URL, data=data, headers={"Content-Type": "application/json"}, method="POST"
         )

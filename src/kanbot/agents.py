@@ -67,8 +67,16 @@ def record_event(db_path, event):
         raise ApiError(400, "hook_event_name must be a non-empty string.")
 
     agent_id = event.get("agent_id") if isinstance(event.get("agent_id"), str) else None
+    if agent_id and not event.get("agent_type"):
+        # Claude Code's internal helpers, such as prompt suggestions, report as subagents
+        # with no type. They'd flash in and out of the list, so they're ignored.
+        return {"ok": True, "ignored": "internal agent"}
     key = f"{session_id}:{agent_id}" if agent_id else session_id
     stamp = now()
+    # When the hook fired. Hooks run in parallel and can arrive out of order, so a state
+    # change older than the last one applied must not override it.
+    fired = event.get("kanbot_ts")
+    fired = float(fired) if type(fired) in (int, float) and fired > 0 else None
     with transaction(db_path) as conn:
         if agent_id:
             ensure_session(conn, session_id, session_id, None, event, stamp)
@@ -119,9 +127,14 @@ def record_event(db_path, event):
         if isinstance(event.get("kanbot_model"), str) and not agent_id:
             changes["model"] = text(event["kanbot_model"])
 
-        if state:
+        stale = (
+            fired is not None and session["state_ts"] is not None and fired < session["state_ts"]
+        )
+        if state and not stale:
             changes.update(transition(session, state, stamp))
             changes["state_detail"] = detail
+            if fired is not None:
+                changes["state_ts"] = fired
         assignments = ", ".join(f"{column} = ?" for column in changes)
         conn.execute(
             f"UPDATE agent_sessions SET {assignments} WHERE key = ?", (*changes.values(), key)
