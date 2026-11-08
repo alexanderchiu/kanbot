@@ -11,6 +11,7 @@ All notable changes to Kanbot. The format follows [Keep a Changelog](https://kee
 - `GET /api` and `kanbot --version` report the version.
 - `deploy/deploy-synology.sh` has `--check`, `--dry-run`, `--ref` and `--port`, and waits for a health check after deploying.
 - Release script and this changelog.
+- Ticket descriptions follow a Why / What / How outline. New tickets in the UI start from it, and `GET /api` returns it as `description_template`.
 
 ### Changed
 
@@ -19,6 +20,7 @@ All notable changes to Kanbot. The format follows [Keep a Changelog](https://kee
 
 ### Fixed
 
+- Agent sessions no longer flicker, show phantom subagents, or vanish when a project filter is set.
 - `docs/synology.md` wrongly said `curl` clients skip the host check.
 
 ## [0.1.0] - 2026-11-08

@@ -1,4 +1,5 @@
 import http.client
+import json
 import re
 import tempfile
 import threading
@@ -6,6 +7,7 @@ import unittest
 from importlib import resources
 from pathlib import Path
 
+from kanbot.api_docs import DESCRIPTION_TEMPLATE
 from kanbot.web import make_server
 
 
@@ -94,6 +96,12 @@ class StaticRouteTest(unittest.TestCase):
                 self.assertEqual(response.getheader("Cache-Control"), "no-store")
                 disk = resources.files("kanbot").joinpath("static", *path.split("/")[2:])
                 self.assertEqual(body, disk.read_bytes())
+
+    def test_api_publishes_the_template_the_ui_uses(self):
+        response, body = self.get("/api")
+        self.assertEqual(json.loads(body)["description_template"], DESCRIPTION_TEMPLATE)
+        _, script = self.get("/static/js/constants.js")
+        self.assertIn(json.dumps(DESCRIPTION_TEMPLATE), script.decode())
 
     def test_page_is_still_served_at_root_and_links_static_files(self):
         response, body = self.get("/")

@@ -9,7 +9,7 @@ Request and response bodies are JSON. `curl -d` works as is, because the server 
 | Field | Values | Default |
 |---|---|---|
 | `title` | Non-empty string (required on create) | |
-| `description` | String | `""` |
+| `description` | String, written as `Why:`, `What:` and `How:` lines (see below) | `""` |
 | `status` | `follow_up`, `in_progress`, `blocked`, `done`, `cancelled` | `follow_up` |
 | `priority` | `high`, `medium`, `low` | `medium` |
 | `project` | String or `null`, stored lowercase | `null` |
@@ -30,6 +30,18 @@ Tickets also return these read-only fields:
 - `completed_at`: when the ticket moved to `done`, in UTC. It's cleared if the ticket leaves `done`, and is `null` for every other status.
 
 If you don't set `position`, a ticket goes before the first ticket of lower priority in its column, or at the end if there is none. Setting `position` or dragging a card overrides this.
+
+### Descriptions
+
+Write descriptions as three lines, so every ticket says why it exists:
+
+```
+Why: Descriptions vary, so the reason for a ticket gets lost.
+What: New tickets start from a Why / What / How template.
+How: Prefill the description in the UI and publish the template in GET /api.
+```
+
+`GET /api` returns this outline as `description_template`, and new tickets in the UI start from it. The server doesn't enforce it.
 
 ## API
 

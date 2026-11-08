@@ -1,4 +1,4 @@
-import { ALL_COLUMNS, CANCELLED, CONFIRM_MS } from "./constants.js";
+import { ALL_COLUMNS, CANCELLED, CONFIRM_MS, DESCRIPTION_TEMPLATE } from "./constants.js";
 import { $, appendLinked, board, dialog, el, filter, form, ideasOnly, urlsIn, linkNode } from "./dom.js";
 import { api } from "./api.js";
 import { findFocusTarget, focusTarget } from "./board.js";
@@ -23,10 +23,16 @@ function renderDescriptionLinks() {
   $("description-links").replaceChildren(...urls.map(linkNode));
 }
 
+// An untouched template counts as no description.
+function descriptionValue() {
+  const value = form.elements.description.value;
+  return value.trim() === DESCRIPTION_TEMPLATE.trim() ? "" : value;
+}
+
 function formValues() {
   return {
     title: form.elements.title.value,
-    description: form.elements.description.value,
+    description: descriptionValue(),
     status: form.elements.status.value,
     priority: form.elements.priority.value,
     project: form.elements.project.value.trim().toLowerCase() || null,
@@ -143,7 +149,7 @@ export function openPanel(ticket, status = "follow_up") {
   $("dialog-title").textContent = ticket ? `#${ticket.id}` : "New ticket";
   dialog.setAttribute("aria-label", ticket ? `Ticket #${ticket.id}: ${ticket.title}` : "New ticket");
   form.elements.title.value = ticket?.title ?? "";
-  form.elements.description.value = ticket?.description ?? "";
+  form.elements.description.value = ticket?.description || DESCRIPTION_TEMPLATE;
   renderDescriptionLinks();
   form.elements.status.value = ticket?.status ?? status;
   form.elements.priority.value = ticket?.priority ?? "medium";

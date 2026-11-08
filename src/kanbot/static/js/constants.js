@@ -13,6 +13,9 @@ export const PRIORITIES = [
   { value: "low", label: "Low" },
 ];
 
+// Keep in step with DESCRIPTION_TEMPLATE in api_docs.py.
+export const DESCRIPTION_TEMPLATE = "Why: \nWhat: \nHow: ";
+
 export const POLL_MS = 3000;
 
 export const TOAST_MS = 4000;

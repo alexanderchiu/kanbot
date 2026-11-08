@@ -2,13 +2,18 @@
 
 from kanbot.db import PRIORITIES, STATUSES
 
+# New tickets in the UI start from this; agents are asked to follow it too.
+DESCRIPTION_TEMPLATE = "Why: \nWhat: \nHow: "
+
 API_DOCS = {
     "description": "Kanbot, a local kanban board. Request and response bodies are JSON.",
     "statuses": list(STATUSES),
     "priorities": list(PRIORITIES),
+    "description_template": DESCRIPTION_TEMPLATE,
     "ticket_fields": {
         "title": "string, required on create",
-        "description": "string, default ''",
+        "description": "string, default ''. Write it as three lines, Why: (the reason), "
+        "What: (the deliverable) and How: (the approach), as in description_template.",
         "status": "follow_up | in_progress | blocked | done | cancelled, default follow_up",
         "priority": "high | medium | low, default medium",
         "project": "string or null; project tag, stored lowercase",
