@@ -50,6 +50,12 @@ API_DOCS = {
         "with PATCH, which overrides the current holder.",
         "DELETE /api/tickets/{id}": "Delete a ticket permanently.",
         "GET /api/projects": "List project tags in use, with ticket counts.",
+        "POST /api/agent-events": "Report a Claude Code hook event. Used by the hooks that "
+        "kanbot-hooks installs; agents don't call it directly.",
+        "GET /api/agents": "List active agent sessions with their state (working, "
+        "needs_input, idle, rate_limited, error), model, ticket, working time, turns, "
+        "tool calls and token counts. Add all=true to include ended and stale sessions.",
+        "DELETE /api/agents/{session_id}": "Dismiss a session and its subagents.",
         "GET /api/stats": "Ticket statistics: totals, counts per status, and average and "
         "median completion time in seconds (created_at to completed_at, done tickets "
         "only), overall and broken down by_creator, by_assignee, by_project and "

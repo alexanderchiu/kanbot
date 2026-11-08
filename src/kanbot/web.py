@@ -4,8 +4,9 @@ import json
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
+from kanbot.agents import delete_agent, list_agents, record_event
 from kanbot.api_docs import API_DOCS
 from kanbot.db import backup_database, connect, migrate, tickets_table_outdated
 from kanbot.errors import ApiError
@@ -26,6 +27,7 @@ MAX_BODY = 1024 * 1024
 TICKET_PATH = re.compile(r"^/api/tickets/(\d{1,18})$")
 CLAIM_PATH = re.compile(r"^/api/tickets/(\d{1,18})/claim$")
 NOTES_PATH = re.compile(r"^/api/tickets/(\d{1,18})/notes$")
+AGENT_PATH = re.compile(r"^/api/agents/([\w.:-]{1,200})$")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -115,6 +117,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(201, add_note(db, int(notes[1]), self.read_body()))
         if method == "GET" and path == "/api/projects":
             return self.send_json(200, list_projects(db))
+        if path == "/api/agent-events" and method == "POST":
+            return self.send_json(200, record_event(db, self.read_body()))
+        if path == "/api/agents" and method == "GET":
+            include_ended = parse_qs(url.query).get("all") == ["true"]
+            return self.send_json(200, list_agents(db, include_ended))
+        if (agent := AGENT_PATH.match(path)) and method == "DELETE":
+            return self.send_json(200, delete_agent(db, agent[1]))
         if method == "GET" and path == "/api/stats":
             return self.send_json(200, ticket_stats(db, url.query))
         raise ApiError(404, f"No route for {method} {path}. See GET /api for the API docs.")

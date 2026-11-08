@@ -27,6 +27,35 @@ CREATE TABLE {name} (
 );
 """  # noqa: E501
 
+AGENT_SESSIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS agent_sessions (
+    key                   TEXT PRIMARY KEY,
+    session_id            TEXT NOT NULL,
+    agent_id              TEXT,
+    agent_type            TEXT,
+    parent_key            TEXT,
+    model                 TEXT,
+    cwd                   TEXT,
+    project               TEXT,
+    state                 TEXT NOT NULL,
+    state_detail          TEXT,
+    state_since           TEXT NOT NULL,
+    started_at            TEXT NOT NULL,
+    last_event_at         TEXT NOT NULL,
+    ended_at              TEXT,
+    working_since         TEXT,
+    working_seconds       REAL NOT NULL DEFAULT 0,
+    turns                 INTEGER NOT NULL DEFAULT 0,
+    tool_calls            INTEGER NOT NULL DEFAULT 0,
+    last_tool             TEXT,
+    input_tokens          INTEGER NOT NULL DEFAULT 0,
+    output_tokens         INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+    ticket_id             INTEGER
+);
+"""
+
 NOTES_TABLE = """
 CREATE TABLE IF NOT EXISTS notes (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -108,6 +137,8 @@ def migrate(db_path):
         conn.execute("CREATE INDEX IF NOT EXISTS notes_ticket ON notes (ticket_id)")
         conn.execute(DEPENDENCIES_TABLE)
         conn.execute(HISTORY_TABLE)
+        conn.execute(AGENT_SESSIONS_TABLE)
+        conn.execute("CREATE INDEX IF NOT EXISTS agent_parent ON agent_sessions (parent_key)")
         conn.execute("CREATE INDEX IF NOT EXISTS history_ticket ON history (ticket_id)")
         row = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'tickets'").fetchone()
         if row is None:
