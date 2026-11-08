@@ -3,3 +3,6 @@ __pycache__/
 kanban.db
 kanban.db-journal
 backups/
+.env
+.claude/worktrees/
+data/

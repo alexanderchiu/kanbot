@@ -1,0 +1,15 @@
+# Kanbot for a NAS or any Docker host. Settings come from .env; see .env.example.
+services:
+  kanbot:
+    build: .
+    image: kanbot:latest
+    container_name: kanbot
+    restart: unless-stopped
+    ports:
+      - "${KANBOT_PUBLISH_PORT:-8787}:8787"
+    environment:
+      # Host names or IPs you'll open the board with, such as your NAS's name and LAN IP.
+      KANBOT_ALLOWED_HOSTS: "${KANBOT_ALLOWED_HOSTS:-}"
+    volumes:
+      # The database and its backups live here, outside the container.
+      - ./data:/data

@@ -9,6 +9,10 @@ uv run server.py                  # http://127.0.0.1:8787
 uv run server.py --port 9000 --db /path/to/board.db
 ```
 
+## Run on a Synology NAS or with Docker
+
+See [docs/synology.md](docs/synology.md). For any Docker host, copy `.env.example` to `.env`, edit it, and run `docker compose up -d --build`.
+
 ## Run as a service
 
 To run the board as a systemd user service that starts when you log in and restarts if it fails:
