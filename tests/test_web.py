@@ -1,4 +1,5 @@
 import http.client
+import re
 import tempfile
 import threading
 import unittest
@@ -82,6 +83,7 @@ class StaticRouteTest(unittest.TestCase):
     def test_serves_each_allowed_type_with_its_content_type(self):
         for path, content_type in [
             ("/static/css/tokens.css", "text/css; charset=utf-8"),
+            ("/static/js/main.js", "text/javascript; charset=utf-8"),
             ("/static/icon.svg", "image/svg+xml"),
             ("/static/index.html", "text/html; charset=utf-8"),
         ]:
@@ -92,6 +94,30 @@ class StaticRouteTest(unittest.TestCase):
                 self.assertEqual(response.getheader("Cache-Control"), "no-store")
                 disk = resources.files("kanbot").joinpath("static", *path.split("/")[2:])
                 self.assertEqual(body, disk.read_bytes())
+
+    def test_page_is_still_served_at_root_and_links_static_files(self):
+        response, body = self.get("/")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.getheader("Content-Type"), "text/html; charset=utf-8")
+        self.assertIn(b'src="/static/js/main.js"', body)
+
+    def test_every_file_the_page_loads_is_served(self):
+        _, page = self.get("/")
+        wanted = set(re.findall(r'(?:href|src)="(/static/[^"]+)"', page.decode()))
+        pending = [path for path in wanted if path.endswith(".js")]
+        while pending:
+            module = pending.pop()
+            _, source = self.get(module)
+            for name in re.findall(r'from "(\./[^"]+)"|import "(\./[^"]+)"', source.decode()):
+                imported = (name[0] or name[1]).removeprefix("./")
+                path = module.rsplit("/", 1)[0] + "/" + imported
+                if path not in wanted:
+                    wanted.add(path)
+                    pending.append(path)
+        self.assertGreater(len(wanted), 10)
+        for path in wanted:
+            with self.subTest(path=path):
+                self.assertEqual(self.get(path)[0].status, 200)
 
     def test_path_traversal_is_not_found(self):
         for path in [
@@ -143,16 +169,16 @@ class StaticRouteTest(unittest.TestCase):
 
     def test_host_and_origin_checks_apply(self):
         port = self.server.server_port
-        response, _ = self.get("/static/icon.svg", {"Host": f"evil.example:{port}"})
+        response, _ = self.get("/static/css/tokens.css", {"Host": f"evil.example:{port}"})
         self.assertEqual(response.status, 403)
-        response, _ = self.get("/static/icon.svg", {"Origin": "http://evil.example"})
+        response, _ = self.get("/static/css/tokens.css", {"Origin": "http://evil.example"})
         self.assertEqual(response.status, 403)
-        response, _ = self.get("/static/icon.svg", {"Origin": f"http://127.0.0.1:{port}"})
+        response, _ = self.get("/static/css/tokens.css", {"Origin": f"http://127.0.0.1:{port}"})
         self.assertEqual(response.status, 200)
 
     def test_only_get_is_routed(self):
         port = self.server.server_port
         connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-        connection.request("POST", "/static/icon.svg", body=b"{}")
+        connection.request("POST", "/static/css/tokens.css", body=b"{}")
         self.assertEqual(connection.getresponse().status, 404)
         connection.close()
