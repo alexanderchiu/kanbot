@@ -113,9 +113,9 @@ uv run ruff check                 # lint
 uv run ruff format                # format
 ```
 
-The backend is the `kanbot` package in `src/kanbot/`, with tests in `tests/`. The UI is in `src/kanbot/static/`. Notes for agents working on this repo are in [CLAUDE.md](CLAUDE.md).
+The backend is the `kanbot` package in `src/kanbot/`, with tests in `tests/`. The UI is plain HTML, CSS and native ES modules in `src/kanbot/static/`: `index.html` is the markup, `css/` and `js/` hold the styles and code split by concern, and the server serves them under `/static/`. There is no build step and nothing to install, so edit a file and reload. Notes for agents working on this repo are in [CLAUDE.md](CLAUDE.md). README screenshots use made-up demo data.
 
-Releases follow [semver](https://semver.org) and are recorded in [CHANGELOG.md](CHANGELOG.md). To cut one, add notes under `## Unreleased`, then run `scripts/release.sh patch`, `minor` or `major`. It runs the checks, bumps the version, dates the changelog, and commits, tags and pushes. README screenshots use made-up demo data.
+Releases follow [semver](https://semver.org) and are recorded in [CHANGELOG.md](CHANGELOG.md). To cut one, add notes under `## Unreleased`, then run `scripts/release.sh patch`, `minor` or `major`. It runs the checks, bumps the version, dates the changelog, and commits, tags and pushes.
 
 ## License
 
