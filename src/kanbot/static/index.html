@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="/static/css/panel.css">
 <link rel="stylesheet" href="/static/css/responsive.css">
 <link rel="stylesheet" href="/static/css/stats.css">
+<link rel="stylesheet" href="/static/css/agents.css">
 </head>
 <body>
 <header>
@@ -20,6 +21,7 @@
   <nav class="view-switch" aria-label="View">
     <a href="#board" id="view-board" aria-current="page">Board</a>
     <a href="#stats" id="view-stats">Stats</a>
+    <a href="#agents" id="view-agents">Agents<span class="badge" id="agents-badge" aria-hidden="true" hidden></span></a>
   </nav>
   <label class="search">
     <span class="sr-only">Search tickets</span>
@@ -40,6 +42,7 @@
 <div id="banner" role="alert" hidden>Can't reach the Kanbot server. Retrying…</div>
 <main id="board"></main>
 <main id="stats-view" hidden aria-label="Statistics"></main>
+<main id="agents-view" hidden aria-label="Agents"></main>
 <div id="toast" role="status" hidden></div>
 
 <dialog id="dialog">

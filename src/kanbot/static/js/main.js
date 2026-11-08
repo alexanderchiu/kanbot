@@ -2,7 +2,7 @@ import { ALL_COLUMNS, POLL_MS, PRIORITIES } from "./constants.js";
 import { form, ideasOnly, showCancelled } from "./dom.js";
 import { loadSetting } from "./settings.js";
 import { refresh } from "./refresh.js";
-import { applyView } from "./stats.js";
+import { applyView } from "./views.js";
 import "./filters.js";
 import "./panel.js";
 import "./shortcuts.js";

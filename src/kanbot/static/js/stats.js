@@ -1,5 +1,5 @@
 import { PRIORITIES, POLL_MS } from "./constants.js";
-import { $, board, el, filter } from "./dom.js";
+import { $, el, filter } from "./dom.js";
 import { formatDuration } from "./format.js";
 import { loadSetting } from "./settings.js";
 
@@ -110,19 +110,10 @@ async function refreshStats(force = false) {
   }
 }
 
-export function applyView() {
-  const stats = location.hash === "#stats";
-  document.body.dataset.view = stats ? "stats" : "board";
-  board.hidden = stats;
-  statsView.hidden = !stats;
-  for (const [id, on] of [["view-board", !stats], ["view-stats", stats]]) {
-    if (on) $(id).setAttribute("aria-current", "page"); else $(id).removeAttribute("aria-current");
-  }
+export function showStats(active) {
   statsPayload = null;
-  if (stats) refreshStats(true);
+  if (active) refreshStats(true);
 }
-
-window.addEventListener("hashchange", applyView);
 
 filter.addEventListener("change", () => { statsPayload = null; refreshStats(true); });
 
