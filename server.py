@@ -2,6 +2,7 @@
 """Kanbot, a local-only kanban board: JSON API for agents, web UI for humans. Stdlib only."""
 import argparse
 import json
+import os
 import re
 import sqlite3
 from contextlib import contextmanager
@@ -13,7 +14,7 @@ from urllib.parse import parse_qs, urlsplit
 HERE = Path(__file__).resolve().parent
 STATUSES = ("follow_up", "in_progress", "blocked", "done", "cancelled")
 PRIORITIES = ("high", "medium", "low")
-ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
+LOCAL_HOSTS = {"127.0.0.1", "localhost"}
 MAX_BODY = 1024 * 1024
 BACKUPS_KEPT = 30
 MAX_ID = 2**63 - 1
@@ -639,8 +640,11 @@ class Handler(BaseHTTPRequestHandler):
             origin_host = urlsplit(origin).netloc if origin else host
         except ValueError:
             raise ApiError(403, "Invalid Host or Origin header.")
-        if hostname not in ALLOWED_HOSTS or origin_host != host:
-            raise ApiError(403, "Request refused: this server is local-only.")
+        allowed = self.server.allowed_hosts
+        if ("*" not in allowed and hostname not in allowed) or origin_host != host:
+            raise ApiError(
+                403, f"Request refused: {hostname} isn't an allowed host. See KANBOT_ALLOWED_HOSTS."
+            )
 
     def read_body(self):
         try:
@@ -714,9 +718,11 @@ class Server(ThreadingHTTPServer):
     request_queue_size = 128
 
 
-def make_server(db_path, port, backup_dir=None):
+def make_server(db_path, port, backup_dir=None, host="127.0.0.1", allowed_hosts=()):
     # Bind first: if the port is taken, another server is using the database.
-    server = Server(("127.0.0.1", port), Handler)
+    server = Server((host, port), Handler)
+    extra = {name.strip().lower() for name in allowed_hosts if name.strip()}
+    server.allowed_hosts = LOCAL_HOSTS | extra
     if backup_dir:
         # Back up before migrating, so a bad upgrade can be undone. A migration always
         # gets a fresh copy, because a restored file's old mtime can look unchanged.
@@ -733,15 +739,34 @@ def make_server(db_path, port, backup_dir=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--port", type=int, default=8787)
-    parser.add_argument("--db", default=str(HERE / "kanban.db"), help="SQLite database path")
+    env = os.environ.get
     parser.add_argument(
-        "--backup-dir", help="Where to keep backups (default: backups/ beside the database)"
+        "--host",
+        default=env("KANBOT_HOST", "127.0.0.1"),
+        help="Address to listen on (env KANBOT_HOST). Use 0.0.0.0 in a container.",
+    )
+    parser.add_argument("--port", type=int, default=int(env("KANBOT_PORT", "8787")))
+    parser.add_argument(
+        "--db", default=env("KANBOT_DB", str(HERE / "kanban.db")), help="SQLite database path"
+    )
+    parser.add_argument(
+        "--backup-dir",
+        default=env("KANBOT_BACKUP_DIR"),
+        help="Where to keep backups (default: backups/ beside the database)",
+    )
+    parser.add_argument(
+        "--allowed-hosts",
+        default=env("KANBOT_ALLOWED_HOSTS", ""),
+        help="Comma-separated host names or IPs browsers may use to reach the board, besides "
+        "localhost (env KANBOT_ALLOWED_HOSTS). * allows any, which removes DNS rebinding "
+        "protection.",
     )
     args = parser.parse_args()
     backup_dir = args.backup_dir or Path(args.db).resolve().parent / "backups"
-    server = make_server(args.db, args.port, backup_dir)
-    print(f"Kanbot running at http://127.0.0.1:{server.server_port} (db: {args.db})", flush=True)
+    server = make_server(args.db, args.port, backup_dir, args.host, args.allowed_hosts.split(","))
+    print(f"Kanbot running on {args.host}:{server.server_port} (db: {args.db})", flush=True)
+    if args.host not in LOCAL_HOSTS:
+        print(f"Allowed hosts: {', '.join(sorted(server.allowed_hosts))}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
