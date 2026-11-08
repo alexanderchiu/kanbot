@@ -85,10 +85,13 @@ If you don't set `position`, a ticket goes before the first ticket of lower prio
 | `POST /api/tickets/{id}/claim` | Take a ticket with `{"assignee": "name"}`; returns 409 if someone else holds it |
 | `DELETE /api/tickets/{id}` | Delete a ticket permanently |
 | `GET /api/projects` | List project tags with ticket counts |
+| `GET /api/stats` | Ticket counts and average and median completion time, overall and by creator, assignee, project and priority; filter with `project` |
 
 An empty `project` or `assignee` filter lists tickets without one, so `assignee=` finds unassigned work. Use `ready=true` to list follow-up tickets with nothing left to wait for. Circular dependencies are rejected, and a dependency doesn't move or lock a ticket: it only shows what the ticket is waiting on.
 
 Every change to a ticket's fields is recorded in its history, except reordering. History starts from when this feature was added, and deleting a ticket deletes its history.
+
+`GET /api/stats` returns `total`, `open`, `by_status`, `avg_completion_seconds` and `median_completion_seconds`, then `by_creator`, `by_assignee`, `by_project` and `by_priority`. Each breakdown row has `name`, `tickets`, `open`, `done`, `cancelled`, `avg_completion_seconds` and `median_completion_seconds`, and rows are sorted by ticket count. A `name` of `null` collects tickets with no creator, assignee or project. Completion time runs from `created_at` to `completed_at` for done tickets; it is `null` when nothing has completed, and tickets with an unreadable or negative duration are left out of the time figures. Tickets moved to Done before completion tracking was added use their last-updated time as `completed_at`. The UI shows this under the Stats switch in the header (`#stats`).
 
 API errors return a 4xx or 5xx status with `{"error": "message"}`.
 
