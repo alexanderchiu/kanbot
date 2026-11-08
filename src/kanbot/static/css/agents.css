@@ -1,6 +1,7 @@
 /* Agents view */
 body[data-view="agents"] header .search,
-body[data-view="agents"] header .toggle { display: none; }
+body[data-view="agents"] header .toggle,
+body[data-view="agents"] header #filter { display: none; }
 .badge {
   min-width: 16px;
   height: 16px;

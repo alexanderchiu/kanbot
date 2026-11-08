@@ -1,5 +1,5 @@
 import { ALL_COLUMNS, CONFIRM_MS, POLL_MS } from "./constants.js";
-import { $, el, filter } from "./dom.js";
+import { $, el } from "./dom.js";
 import { api } from "./api.js";
 import { formatAgo, formatElapsed, formatTokens, shortModel, timestamp } from "./format.js";
 import { openPanel } from "./panel.js";
@@ -46,8 +46,6 @@ function effectiveState(session) {
   if (ATTENTION.has(own) || own === "stale" || own === "ended") return own;
   return session.subagents.map(ownState).find((s) => ATTENTION.has(s)) ?? own;
 }
-
-const visibleSessions = (list, project = filter.value) => (project ? list.filter((s) => s.project === project) : list);
 
 export function attentionCount(list) {
   return list.filter((s) => ATTENTION.has(effectiveState(s))).length;
@@ -299,9 +297,9 @@ function showEndedToggle() {
   return label;
 }
 
-function emptyState(project) {
+function emptyState() {
   const box = el("div", "agents-empty");
-  box.append(el("p", "", project ? "No sessions in this project." : "No agent sessions yet."));
+  box.append(el("p", "", "No agent sessions yet."));
   const help = el("div", "agents-help");
   const run = el("p");
   run.append("To track Claude Code sessions, run ", el("code", "", "uv run kanbot-hooks install"), " yourself, then restart your Claude Code sessions.");
@@ -331,14 +329,15 @@ function restoreFocus(target) {
 function renderAgents() {
   const scroll = agentsView.scrollTop;
   const focus = focusedControl();
-  const project = filter.value;
-  const list = sortSessions(visibleSessions(sessions, project));
+  // Sessions are grouped by folder, not by ticket project, so the board's project
+  // filter doesn't apply here: it would hide every session whose folder name differs.
+  const list = sortSessions(sessions);
   const body = el("div", "agents-body");
   const bar = el("div", "agents-bar");
   bar.append(summaryRow(list), showEndedToggle());
   body.append(bar);
   if (!list.length) {
-    body.append(emptyState(project));
+    body.append(emptyState());
   } else {
     const ul = el("ul", "agent-list");
     ul.setAttribute("aria-label", "Agent sessions");
@@ -368,7 +367,7 @@ async function refreshAgents(force = false) {
     sessions = next;
     setBadge(attentionCount(next));
     // Going stale depends on the clock, not on any field that changes.
-    const nextSignature = JSON.stringify(next, stripSeconds) + flatten(next).map(ownState).join() + showEnded + filter.value;
+    const nextSignature = JSON.stringify(next, stripSeconds) + flatten(next).map(ownState).join() + showEnded;
     if (!force && nextSignature === signature) {
       tickLive();
       return;
@@ -395,7 +394,6 @@ export function showAgents(active) {
   if (active) refreshAgents(true); else refreshBadge();
 }
 
-filter.addEventListener("change", () => { signature = null; refreshAgents(true); });
 document.addEventListener("visibilitychange", () => { refreshAgents(); refreshBadge(); });
 setInterval(() => refreshAgents(), POLL_MS);
 setInterval(refreshBadge, BADGE_MS);
