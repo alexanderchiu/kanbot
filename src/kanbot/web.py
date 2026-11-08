@@ -4,7 +4,7 @@ import json
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from kanbot import __version__
 from kanbot.agents import delete_agent, list_agents, record_event
@@ -29,6 +29,38 @@ TICKET_PATH = re.compile(r"^/api/tickets/(\d{1,18})$")
 CLAIM_PATH = re.compile(r"^/api/tickets/(\d{1,18})/claim$")
 NOTES_PATH = re.compile(r"^/api/tickets/(\d{1,18})/notes$")
 AGENT_PATH = re.compile(r"^/api/agents/([\w.:-]{1,200})$")
+STATIC_PREFIX = "/static/"
+STATIC_TYPES = {
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".html": "text/html; charset=utf-8",
+    ".png": "image/png",
+    ".json": "application/json",
+}
+STATIC_SEGMENT = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")
+
+
+def read_static(url_path):
+    """Return (bytes, content type) for a file under the package's static/ folder, or None.
+
+    Only plain relative paths of allowed file types qualify: no empty or dot segments, no
+    encoded separators, backslashes or NUL, however the request spells them.
+    """
+    name = unquote(url_path.removeprefix(STATIC_PREFIX))
+    # One level of decoding only; a leftover % means a double-encoded path.
+    if "%" in name or "\\" in name:
+        return None
+    segments = name.split("/")
+    if not all(STATIC_SEGMENT.fullmatch(segment) for segment in segments):
+        return None
+    content_type = STATIC_TYPES.get("." + segments[-1].rsplit(".", 1)[-1].lower())
+    if content_type is None:
+        return None
+    node = resources.files("kanbot").joinpath("static", *segments)
+    if not node.is_file():
+        return None
+    return node.read_bytes(), content_type
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -97,6 +129,11 @@ class Handler(BaseHTTPRequestHandler):
         if method == "GET" and path == "/":
             html = (resources.files("kanbot") / "static" / "index.html").read_bytes()
             return self.send_bytes(200, html, "text/html; charset=utf-8")
+        if method == "GET" and url.path.startswith(STATIC_PREFIX):
+            found = read_static(url.path)
+            if found is None:
+                raise ApiError(404, f"No static file at {url.path}.")
+            return self.send_bytes(200, *found)
         if method == "GET" and path == "/api":
             return self.send_json(200, {"version": __version__, **API_DOCS})
         if path == "/api/tickets":
