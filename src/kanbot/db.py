@@ -98,6 +98,10 @@ class Conn:
             lost = raw.broken or raw.closed
             if lost:
                 self.connection.invalidate(error)
+                # The rest of the pool likely went the same way, as when a pooler drops
+                # idle connections. SQLAlchemy replaces the pool in this case, and so do
+                # we, or a retry could pick up another dead connection.
+                self.connection.engine.dispose(close=False)
             raise sa.exc.DBAPIError.instance(
                 None, None, error, psycopg.Error, connection_invalidated=lost
             ) from error
