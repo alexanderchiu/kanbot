@@ -17,6 +17,8 @@ import urllib.request
 
 URL = os.environ.get("KANBOT_URL", "http://127.0.0.1:8787").rstrip("/") + "/api/agent-events"
 # Events after which the transcript holds new assistant messages worth counting.
+# Events whose hook output Claude Code adds to the session as context.
+CONTEXT_EVENTS = {"SessionStart", "UserPromptSubmit", "PostToolUse"}
 USAGE_EVENTS = {"Stop", "StopFailure", "SessionEnd", "SubagentStop", "PreCompact"}
 KEEP = {
     "session_id",
@@ -91,7 +93,14 @@ def main():
         request = urllib.request.Request(
             URL, data=data, headers={"Content-Type": "application/json"}, method="POST"
         )
-        urllib.request.urlopen(request, timeout=3).close()
+        with urllib.request.urlopen(request, timeout=3) as response:
+            reply = json.load(response)
+        name = event.get("hook_event_name")
+        # The board can ask the agent something, such as whether a ticket is still live.
+        # Claude Code adds additionalContext from these events to the session.
+        if name in CONTEXT_EVENTS and isinstance(reply.get("message"), str):
+            output = {"hookEventName": name, "additionalContext": reply["message"]}
+            print(json.dumps({"hookSpecificOutput": output}))
     except Exception:
         pass
     return 0

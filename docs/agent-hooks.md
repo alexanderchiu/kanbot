@@ -38,4 +38,8 @@ The hook script, `src/kanbot/hook.py`, sends the session ID, event name, working
 
 **Token counts are best-effort.** No hook reports tokens, so the script adds up the usage in the session transcript. That format is internal to Claude Code and can change between releases. If parsing fails, token counts stop updating, and everything else carries on working.
 
+## Check-ins
+
+When the board asks about a quiet ticket (see [api.md](api.md#check-ins)), the session linked to that ticket is shown the question once, on its next `SessionStart`, `UserPromptSubmit` or `PostToolUse` event. The board puts it in its reply to the hook, and the hook passes it to Claude Code as `additionalContext`. An idle session sees it when you next prompt it. Sessions are linked to a ticket when they claim it or move it to `in_progress`.
+
 Sessions that end without a `SessionEnd` event, for example when the terminal is killed, are hidden after 12 hours of inactivity. You can also dismiss them.
