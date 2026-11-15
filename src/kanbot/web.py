@@ -42,6 +42,7 @@ STATIC_TYPES = {
     ".svg": "image/svg+xml",
     ".html": "text/html; charset=utf-8",
     ".png": "image/png",
+    ".woff2": "font/woff2",
     ".json": "application/json",
 }
 STATIC_SEGMENT = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")
