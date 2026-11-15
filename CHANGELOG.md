@@ -4,6 +4,10 @@ All notable changes to Kanbot. The format follows [Keep a Changelog](https://kee
 
 ## Unreleased
 
+### Changed
+
+- New look, shared with the workout tracker: a light theme in the Archivo typeface (self-hosted), ink on white with hairline rules, condensed numerals for the title, counts and stats, and hi-vis yellow for work in progress.
+
 ## [0.2.0] - 2026-11-08
 
 ### Added

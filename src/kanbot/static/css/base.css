@@ -6,16 +6,18 @@ body {
   flex-direction: column;
   background: var(--bg);
   color: var(--text);
-  font: 400 13px/1.45 var(--font);
+  font: 400 14px/1.4 var(--font);
+  font-stretch: 87.5%;
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   scrollbar-color: var(--line-strong) transparent;
   scrollbar-width: thin;
 }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
-a { color: var(--blue); text-decoration: none; overflow-wrap: anywhere; }
-a:hover { text-decoration: underline; }
-:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+a { color: var(--text); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 2px; overflow-wrap: anywhere; }
+a:hover { text-decoration-color: var(--text); text-decoration-thickness: 2px; }
+:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
 [hidden] { display: none !important; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 kbd {
@@ -30,18 +32,18 @@ kbd {
 
 /* Controls */
 .control {
-  height: 30px;
+  height: 32px;
   padding: 0 10px;
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   transition: border-color var(--ease), background var(--ease);
 }
-.control:hover { border-color: var(--line-strong); }
+.control:hover { border-color: var(--text); }
 select.control, .property select {
   appearance: none;
   padding-right: 26px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5 5 6.5 8 3.5' fill='none' stroke='%239a9884' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5 5 6.5 8 3.5' fill='none' stroke='%23000000' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-position: right 9px center;
   background-repeat: no-repeat;
   cursor: pointer;
@@ -50,23 +52,25 @@ select.control, .property select {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  height: 30px;
+  height: 32px;
   padding: 0 12px;
   background: transparent;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
-  font-weight: 500;
+  font-weight: 600;
   white-space: nowrap;
-  transition: background var(--ease), border-color var(--ease);
+  transition: background var(--ease), border-color var(--ease), transform 80ms;
 }
-.button:hover { background: var(--hover); }
-.button.primary { background: var(--green); border-color: var(--green); color: var(--on-accent); }
-.button.primary:hover { background: #b8ed4f; border-color: #b8ed4f; }
-.button.primary kbd { border-color: rgb(25 26 23 / 0.35); color: var(--on-accent); }
+.button:hover { background: var(--raised); }
+.button:active { transform: scale(0.98); }
+.button.primary { background: var(--text); border-color: var(--text); color: var(--on-accent); font-weight: 700; }
+.button.primary:hover { background: var(--text-2); border-color: var(--text-2); }
+.button.primary kbd { border-color: rgb(255 255 255 / 0.4); color: var(--on-accent); }
 .button.quiet { border-color: transparent; color: var(--text-2); }
 .button.quiet:hover { color: var(--text); }
-.button.danger { border-color: transparent; color: var(--pink-text); }
-.button.danger.armed { background: var(--pink); border-color: var(--pink); color: var(--on-accent); }
+.button.danger { border-color: transparent; color: var(--danger); }
+.button.danger:hover { background: var(--danger-bg); }
+.button.danger.armed { background: var(--danger); border-color: var(--danger); color: var(--on-accent); }
 .icon-button {
   display: grid;
   place-items: center;
@@ -79,5 +83,5 @@ select.control, .property select {
   color: var(--text-3);
   transition: background var(--ease), color var(--ease), opacity var(--ease);
 }
-.icon-button:hover { background: var(--hover); color: var(--text); }
+.icon-button:hover { background: var(--raised); color: var(--text); }
 svg { display: block; }

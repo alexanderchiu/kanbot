@@ -8,7 +8,7 @@ body[data-view="agents"] header #filter { display: none; }
   margin-left: 6px;
   padding: 0 5px;
   background: var(--orange);
-  border-radius: 8px;
+  border-radius: var(--radius);
   color: var(--on-accent);
   font-size: 11px;
   font-weight: 600;
@@ -29,12 +29,12 @@ body[data-view="agents"] header #filter { display: none; }
 [data-state="working"] { --signal: var(--green); --signal-text: var(--green); }
 [data-state="needs_input"] { --signal: var(--orange); --signal-text: var(--orange); }
 [data-state="rate_limited"] { --signal: var(--purple); --signal-text: var(--purple); }
-[data-state="idle"] { --signal: var(--blue); --signal-text: var(--blue); }
-[data-state="error"] { --signal: var(--pink); --signal-text: var(--pink-text); }
+[data-state="idle"] { --signal: var(--text-2); --signal-text: var(--text-2); }
+[data-state="error"] { --signal: var(--danger); --signal-text: var(--danger); }
 [data-state="ended"], [data-state="stale"] { --signal: var(--text-3); --signal-text: var(--text-2); }
 .agent-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .agent { min-width: 0; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
-.agent[data-attention] { box-shadow: inset 3px 0 0 var(--signal); border-color: var(--line-strong); }
+.agent[data-attention] { border-left: 3px solid var(--signal); }
 .agent-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
 .state-pill {
   display: inline-flex;
@@ -44,15 +44,15 @@ body[data-view="agents"] header #filter { display: none; }
   padding: 0 9px;
   background: color-mix(in srgb, var(--signal) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--signal) 40%, transparent);
-  border-radius: 11px;
+  border-radius: var(--radius-sm);
   color: var(--signal-text);
-  font-weight: 500;
+  font-weight: 600;
   white-space: nowrap;
 }
 .state-pill[data-state="working"]::before { animation: pulse 1.8s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.35; } }
 .agent-since, .agent-meta { color: var(--text-3); font-variant-numeric: tabular-nums; }
-.agent-model { font-weight: 600; }
+.agent-model { font-weight: 700; }
 .agent-project { padding: 0 7px; border: 1px solid var(--line-strong); border-radius: 4px; color: var(--text-2); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
 .agent-spacer { flex: 1; }
 .agent-dismiss { height: 26px; padding: 0 10px; font-size: 12px; }

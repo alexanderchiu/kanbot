@@ -5,9 +5,9 @@ header {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 12px 20px;
+  padding: 14px 20px 12px;
 }
-h1 { display: flex; align-items: center; gap: 8px; margin: 0 auto 0 0; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+h1 { display: flex; align-items: center; gap: 10px; margin: 0 auto 0 0; font-size: 32px; line-height: 1; }
 .logo { flex: none; }
 .search { position: relative; display: flex; align-items: center; }
 .search svg { position: absolute; left: 9px; color: var(--text-3); pointer-events: none; }
@@ -21,18 +21,19 @@ h1 { display: flex; align-items: center; gap: 8px; margin: 0 auto 0 0; font-size
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 30px;
+  height: 32px;
   padding: 0 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   color: var(--text-2);
   cursor: pointer;
   user-select: none;
   transition: background var(--ease), border-color var(--ease), color var(--ease);
 }
-.toggle:hover { border-color: var(--line-strong); color: var(--text); }
-.toggle:has(input:checked) { background: var(--raised); border-color: var(--line-strong); color: var(--text); }
-.toggle:has(input:focus-visible) { outline: 2px solid var(--blue); outline-offset: 1px; }
+.toggle:hover { border-color: var(--text); color: var(--text); }
+.toggle:has(input:checked) { background: var(--text); border-color: var(--text); color: var(--on-accent); font-weight: 600; }
+.toggle:has(input:checked) .count { color: var(--line); }
+.toggle:has(input:focus-visible) { outline: 3px solid var(--blue); outline-offset: 2px; }
 .toggle input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
 .toggle .count { color: var(--text-3); }
 #filter { max-width: 170px; color: var(--text-2); }
@@ -46,14 +47,16 @@ h1 { display: flex; align-items: center; gap: 8px; margin: 0 auto 0 0; font-size
   padding: 4px 4px 4px 12px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  color: var(--text-2);
+  border-left: 3px solid var(--orange);
+  border-radius: var(--radius);
+  color: var(--text);
 }
 #banner {
   flex: none;
   margin: 0 20px 8px;
   padding: 8px 12px;
-  background: var(--raised);
-  border-radius: var(--radius-sm);
-  color: var(--pink-text);
+  background: var(--danger-bg);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius);
+  color: var(--danger);
 }
