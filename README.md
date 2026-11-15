@@ -66,6 +66,8 @@ Options: `--port`, `--db` (a SQLite file or a database URL; the default is `kanb
 
 Install Claude Code hooks with `uv run kanbot-hooks install` to have each session report what it's doing: its state, model, ticket, working time, turns, tool calls and tokens, and whether it's waiting for your input or stopped by a usage limit. Prompts and tool output are never stored. See [docs/agent-hooks.md](docs/agent-hooks.md).
 
+Every hour, the board also asks about assigned tickets that have sat in progress or blocked for an hour without changes. It adds a note asking whether the work is still going, and agents with the hooks see the question in their session. See [Check-ins](docs/api.md#check-ins).
+
 ## Backups
 
 When using SQLite, each time the server starts, it copies the database to `backups/` beside it, unless nothing has changed since the last copy, and always before upgrading the database. It keeps the newest 30. To restore one, stop the server and copy a backup over `kanban.db`.

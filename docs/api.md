@@ -43,6 +43,14 @@ How: Prefill the description in the UI and publish the template in GET /api.
 
 `GET /api` returns this outline as `description_template`, and new tickets in the UI start from it. The server doesn't enforce it.
 
+### Check-ins
+
+Every hour, the server asks about assigned tickets that are `in_progress` or `blocked` and haven't changed for an hour. It adds a note from `kanbot` addressed to the assignee, asking whether the work is still going, or still blocked. Any change to the ticket answers it: a note, a status change or an edit. A ticket has one open question at a time, so an unanswered one isn't repeated; once answered, the ticket is asked about again after another quiet hour. Unassigned tickets aren't asked about.
+
+Agents with the hooks installed also see the question in their session, if it's about the ticket they're working on. See [agent-hooks.md](agent-hooks.md#check-ins).
+
+Set the period with `--checkin-minutes` or `KANBOT_CHECKIN_MINUTES` (default 60). `0` turns check-ins off.
+
 ## API
 
 | Request | Purpose |

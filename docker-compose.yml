@@ -13,6 +13,7 @@ services:
       # Set in .env to use Supabase or another Postgres database instead of data/.
       KANBOT_DATABASE_URL: "${KANBOT_DATABASE_URL:-}"
       KANBOT_MIGRATE: "${KANBOT_MIGRATE:-1}"
+      KANBOT_CHECKIN_MINUTES: "${KANBOT_CHECKIN_MINUTES:-60}"
     volumes:
       # The database and its backups live here, outside the container.
       - ./data:/data

@@ -4,6 +4,10 @@ All notable changes to Kanbot. The format follows [Keep a Changelog](https://kee
 
 ## Unreleased
 
+### Added
+
+- Hourly check-ins: the server adds a note asking about assigned tickets that have sat in progress or blocked for an hour without changes, and agents with the hooks see the question in their session. `--checkin-minutes` / `KANBOT_CHECKIN_MINUTES` sets the period, `0` turns it off.
+
 ### Changed
 
 - New look, shared with the workout tracker: a light theme in the Archivo typeface (self-hosted), ink on white with hairline rules, condensed numerals for the title, counts and stats, and hi-vis yellow for work in progress.

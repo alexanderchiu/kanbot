@@ -46,7 +46,8 @@ API_DOCS = {
         "history, newest change first.",
         "POST /api/tickets/{id}/notes": 'Add a note with {"body": "text", "author": '
         '"name"}. Notes are append-only, so use them for progress, handoffs and the '
-        "reason a ticket is blocked or cancelled.",
+        "reason a ticket is blocked or cancelled. A note from kanbot is a check-in on "
+        "a quiet in-progress or blocked ticket: answer it with a note or a status change.",
         "PATCH /api/tickets/{id}": "Change any ticket fields. To move a ticket, send "
         '{"status": "done"}. To cancel one and keep it on record, send '
         '{"status": "cancelled"}. Add "actor": "name" to record who made the change.',
@@ -56,7 +57,8 @@ API_DOCS = {
         "DELETE /api/tickets/{id}": "Delete a ticket permanently.",
         "GET /api/projects": "List project tags in use, with ticket counts.",
         "POST /api/agent-events": "Report a Claude Code hook event. Used by the hooks that "
-        "kanbot-hooks installs; agents don't call it directly.",
+        "kanbot-hooks installs; agents don't call it directly. The reply can carry a "
+        "message, such as a check-in question, that the hook shows the agent.",
         "GET /api/agents": "List active agent sessions with their state (working, "
         "needs_input, idle, rate_limited, error), model, ticket, working time, turns, "
         "tool calls and token counts. Add all=true to include ended and stale sessions.",

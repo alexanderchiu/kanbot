@@ -56,8 +56,15 @@ def text(value, limit=DETAIL_LIMIT):
     return value[:limit] if isinstance(value, str) and value else None
 
 
-def record_event(db, event):
-    """Update a session from one hook event. Unknown events are accepted and ignored."""
+# Events whose hook output Claude Code adds to the session as context.
+CONTEXT_EVENTS = {"SessionStart", "UserPromptSubmit", "PostToolUse"}
+
+
+def record_event(db, event, checkins=None):
+    """Update a session from one hook event. Unknown events are accepted and ignored.
+
+    With checkins, the reply can carry a "message" for the hook to show the agent, such
+    as a check-in question about the ticket it's working on."""
     if not isinstance(event, dict):
         raise ApiError(400, "Request body must be a JSON object.")
     session_id, name = event.get("session_id"), event.get("hook_event_name")
@@ -148,7 +155,12 @@ def record_event(db, event):
                 " WHERE parent_key = :parent AND state != :ended",
                 {"ended": ENDED, "stamp": stamp, "parent": session_id},
             )
-    return {"ok": True}
+    result = {"ok": True}
+    if checkins is not None and name in CONTEXT_EVENTS and not agent_id:
+        ticket_id = changes.get("ticket_id", session["ticket_id"])
+        if message := checkins.message_for(key, ticket_id):
+            result["message"] = message
+    return result
 
 
 def ensure_session(conn, key, session_id, agent_id, event, stamp):

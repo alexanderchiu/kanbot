@@ -7,6 +7,7 @@ from pathlib import Path
 
 from kanbot import __doc__ as DESCRIPTION
 from kanbot import __version__
+from kanbot.checkins import DEFAULT_MINUTES
 from kanbot.db import Database
 from kanbot.web import LOCAL_HOSTS, make_server
 
@@ -55,6 +56,14 @@ def main(argv=None):
         help="Don't change the schema at startup; refuse to start if it's out of date. "
         "For setups where CI runs kanbot migrate (env KANBOT_MIGRATE=0).",
     )
+    parser.add_argument(
+        "--checkin-minutes",
+        type=int,
+        default=int(env("KANBOT_CHECKIN_MINUTES", str(DEFAULT_MINUTES))),
+        help="Ask about assigned in-progress and blocked tickets that have been quiet this "
+        f"long, on the same period (default {DEFAULT_MINUTES}; 0 turns it off; env "
+        "KANBOT_CHECKIN_MINUTES)",
+    )
     commands = parser.add_subparsers(dest="command", title="commands", metavar="")
     commands.add_parser(
         "migrate", parents=[database_again], help="Bring the database schema up to date, then exit"
@@ -101,6 +110,7 @@ def main(argv=None):
             args.host,
             args.allowed_hosts.split(","),
             migrate=not args.no_migrate,
+            checkin_minutes=args.checkin_minutes,
         )
     except RuntimeError as error:
         parser.exit(1, f"kanbot: {error}\n")

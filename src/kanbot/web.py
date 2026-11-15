@@ -12,6 +12,7 @@ import sqlalchemy as sa
 from kanbot import __version__
 from kanbot.agents import delete_agent, list_agents, record_event
 from kanbot.api_docs import API_DOCS
+from kanbot.checkins import Checkins
 from kanbot.db import Database
 from kanbot.errors import ApiError
 from kanbot.events import Changes
@@ -168,7 +169,7 @@ class Handler(BaseHTTPRequestHandler):
         if method == "GET" and path == "/api/projects":
             return self.send_json(200, list_projects(db))
         if path == "/api/agent-events" and method == "POST":
-            result = record_event(db, self.read_body())
+            result = record_event(db, self.read_body(), self.server.checkins)
             if "ignored" in result:
                 self.changed = None
             return self.send_json(200, result)
@@ -247,19 +248,32 @@ class Server(ThreadingHTTPServer):
     request_queue_size = 128
     db = None
     changes = None
+    checkins = None
 
     def server_close(self):
         super().server_close()
+        if self.checkins is not None:
+            self.checkins.stop()
         if self.changes is not None:
             self.changes.close()
         if self.db is not None:
             self.db.close()
 
 
-def make_server(database, port, backup_dir=None, host="127.0.0.1", allowed_hosts=(), migrate=True):
+def make_server(
+    database,
+    port,
+    backup_dir=None,
+    host="127.0.0.1",
+    allowed_hosts=(),
+    migrate=True,
+    checkin_minutes=0,
+):
     """Serve a database, given as a Database, a SQLite file path or a database URL.
 
     With migrate=False the schema is only checked, for setups where CI runs migrations.
+    With checkin_minutes, quiet in-progress and blocked tickets are asked about on that
+    period (see checkins.py); 0 turns that off.
     """
     # Bind first: if the port is taken, another server is using the database.
     server = Server((host, port), Handler)
@@ -268,9 +282,11 @@ def make_server(database, port, backup_dir=None, host="127.0.0.1", allowed_hosts
         server.allowed_hosts = LOCAL_HOSTS | extra
         server.db = database if isinstance(database, Database) else Database(database)
         server.changes = Changes(server.db)
+        server.checkins = Checkins(server.db, server.changes, checkin_minutes)
         if not migrate:
             if warning := server.db.check_schema():
                 print(warning, flush=True)
+            server.checkins.start()
             return server
         if backup_dir:
             # Back up before migrating, so a bad upgrade can be undone. A migration always
@@ -280,4 +296,5 @@ def make_server(database, port, backup_dir=None, host="127.0.0.1", allowed_hosts
     except BaseException:
         server.server_close()
         raise
+    server.checkins.start()
     return server

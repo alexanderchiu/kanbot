@@ -60,6 +60,7 @@ Set these in `.env`:
 | `KANBOT_PUBLISH_PORT` | Port on the NAS. The default is `8787`. |
 | `KANBOT_DATABASE_URL` | Optional. A Supabase or other Postgres URL, to keep the data there instead of in `data/`. See [supabase.md](supabase.md). |
 | `KANBOT_MIGRATE` | Optional. `0` stops the container changing the schema, for when CI runs migrations. |
+| `KANBOT_CHECKIN_MINUTES` | Optional. How often to ask about quiet in-progress and blocked tickets. The default is `60`; `0` turns it off. See [api.md](api.md#check-ins). |
 
 The database and its backups live in `data/` next to `docker-compose.yml`. Include that folder in Hyper Backup.
 
